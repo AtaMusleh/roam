@@ -4,6 +4,7 @@ import { decode } from "blurhash";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
+import { UNSPLASH_HOME } from "@/lib/unsplash";
 import { cn } from "@/lib/utils";
 
 export interface PhotoGridItem {
@@ -12,6 +13,9 @@ export interface PhotoGridItem {
   width: number;
   height: number;
   blurhash: string | null;
+  /** Set for stock imagery, which must be credited wherever it is shown. */
+  photographerName: string | null;
+  photographerUrl: string | null;
 }
 
 interface PhotoGridProps {
@@ -78,14 +82,14 @@ function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
         arrive, so a column of thumbnails does not shuffle as they land.
       */}
       <div
-        className="relative overflow-hidden rounded-md bg-muted"
+        className="group relative overflow-hidden rounded-md bg-muted"
         style={{ aspectRatio: `${photo.width} / ${photo.height}` }}
       >
         {photo.blurhash !== null && <BlurhashCanvas hash={photo.blurhash} />}
 
         <Image
           src={photo.url}
-          alt=""
+          alt={photo.photographerName === null ? "" : `Photograph by ${photo.photographerName}`}
           fill
           sizes={sizes}
           onLoad={() => {
@@ -96,6 +100,45 @@ function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
             loaded ? "opacity-100" : "opacity-0",
           )}
         />
+
+        {photo.photographerName !== null && (
+          /*
+            Unsplash's API terms require the photographer and Unsplash to be
+            credited with links wherever the photograph appears. On a wall of
+            images a permanent caption would bury the photographs, so it
+            surfaces on hover — and stays visible on touch devices, which have
+            no hover to surface it with, and whenever a link inside is focused,
+            so it is reachable by keyboard.
+          */
+          <figcaption
+            className={cn(
+              "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent",
+              "px-2 pb-1.5 pt-6 text-[10px] leading-tight text-white/90",
+              "opacity-0 transition-opacity duration-200",
+              "group-hover:opacity-100 group-focus-within:opacity-100",
+              "[@media(hover:none)]:opacity-100",
+            )}
+          >
+            Photo by{" "}
+            <a
+              href={photo.photographerUrl ?? UNSPLASH_HOME}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline underline-offset-2 hover:text-white"
+            >
+              {photo.photographerName}
+            </a>{" "}
+            on{" "}
+            <a
+              href={UNSPLASH_HOME}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline underline-offset-2 hover:text-white"
+            >
+              Unsplash
+            </a>
+          </figcaption>
+        )}
       </div>
     </figure>
   );

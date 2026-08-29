@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo-trip.ts",
+    "fetch:unsplash": "tsx scripts/fetch-unsplash.ts",
     "db:apply": "tsx scripts/push-schema.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

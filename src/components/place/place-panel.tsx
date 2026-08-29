@@ -19,6 +19,7 @@ import type { TripPlace } from "@/lib/queries";
 interface PlacePanelProps {
   place: TripPlace | null;
   order: number | null;
+  utcOffsetMinutes: number;
   onClose: () => void;
 }
 
@@ -30,12 +31,20 @@ function photosOf(place: TripPlace): PhotoGridItem[] {
       width: photo.width,
       height: photo.height,
       blurhash: photo.blurhash,
+      photographerName: photo.photographerName,
+      photographerUrl: photo.photographerUrl,
     })),
   );
 }
 
 /** Name, position, when the traveller was there, and everything they took. */
-function PlaceDetail({ place }: { place: TripPlace }) {
+function PlaceDetail({
+  place,
+  utcOffsetMinutes,
+}: {
+  place: TripPlace;
+  utcOffsetMinutes: number;
+}) {
   const photos = photosOf(place);
 
   return (
@@ -68,10 +77,11 @@ function PlaceDetail({ place }: { place: TripPlace }) {
           {place.visits.map((visit) => (
             <li key={visit.id} className="flex items-baseline justify-between gap-3">
               <span className="text-muted-foreground">
-                {formatTripDay(visit.arrivedAt)}
+                {formatTripDay(visit.arrivedAt, utcOffsetMinutes)}
               </span>
               <span className="font-mono tabular-nums">
-                {formatTripTime(visit.arrivedAt)}–{formatTripTime(visit.departedAt)}
+                {formatTripTime(visit.arrivedAt, utcOffsetMinutes)}–
+                {formatTripTime(visit.departedAt, utcOffsetMinutes)}
               </span>
             </li>
           ))}
@@ -122,7 +132,12 @@ function PanelHeading({ place, order }: { place: TripPlace; order: number | null
  * selected on first paint, so neither variant renders until the visitor has
  * clicked something.
  */
-export function PlacePanel({ place, order, onClose }: PlacePanelProps) {
+export function PlacePanel({
+  place,
+  order,
+  utcOffsetMinutes,
+  onClose,
+}: PlacePanelProps) {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
   if (place === null) return null;
@@ -158,7 +173,7 @@ export function PlacePanel({ place, order, onClose }: PlacePanelProps) {
           </SheetHeader>
 
           <div className="px-4 pb-6">
-            <PlaceDetail place={place} />
+            <PlaceDetail place={place} utcOffsetMinutes={utcOffsetMinutes} />
           </div>
         </SheetContent>
       </Sheet>
@@ -184,7 +199,7 @@ export function PlacePanel({ place, order, onClose }: PlacePanelProps) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <PlaceDetail place={place} />
+        <PlaceDetail place={place} utcOffsetMinutes={utcOffsetMinutes} />
       </div>
     </aside>
   );

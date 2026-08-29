@@ -9,6 +9,7 @@
 
 import type { GpsSource } from "@/types";
 
+import { tripDayKey } from "./format";
 import { prisma } from "./prisma";
 
 export interface TripPhoto {
@@ -17,6 +18,8 @@ export interface TripPhoto {
   width: number;
   height: number;
   blurhash: string | null;
+  photographerName: string | null;
+  photographerUrl: string | null;
   takenAt: Date | null;
   lat: number | null;
   lng: number | null;
@@ -47,6 +50,8 @@ export interface TripDetail {
   startDate: Date;
   endDate: Date;
   isPublic: boolean;
+  /** Minutes to add to a UTC instant for the traveller's wall clock. */
+  utcOffsetMinutes: number;
   /** Chronological: the order the traveller first reached each place. */
   places: TripPlace[];
 }
@@ -75,6 +80,7 @@ export async function getTripBySlug(slug: string): Promise<TripDetail | null> {
       startDate: true,
       endDate: true,
       isPublic: true,
+      utcOffsetMinutes: true,
       places: {
         select: {
           id: true,
@@ -97,6 +103,8 @@ export async function getTripBySlug(slug: string): Promise<TripDetail | null> {
                   width: true,
                   height: true,
                   blurhash: true,
+                  photographerName: true,
+                  photographerUrl: true,
                   takenAt: true,
                   lat: true,
                   lng: true,
@@ -161,12 +169,15 @@ function firstArrival(visits: readonly { arrivedAt: Date }[]): number {
 /**
  * Headline numbers for the trip.
  *
- * `dayCount` counts the distinct calendar days the traveller was out taking
- * photographs, not the span between the first and last — a trip with a rest day
- * in the middle should not claim it. See `formatTripTime` in `./format` for why
- * those days are counted in UTC.
+ * `dayCount` counts the distinct local calendar days the traveller was out
+ * taking photographs, not the span between the first and last — a trip with a
+ * rest day in the middle should not claim it. Counted in the trip's own time,
+ * so a late night abroad does not become two days.
  */
-export async function getTripStats(tripId: string): Promise<TripStats> {
+export async function getTripStats(
+  tripId: string,
+  utcOffsetMinutes: number,
+): Promise<TripStats> {
   const [placeCount, photoCount, visits] = await Promise.all([
     prisma.place.count({ where: { tripId } }),
     prisma.photo.count({ where: { tripId } }),
@@ -177,7 +188,7 @@ export async function getTripStats(tripId: string): Promise<TripStats> {
   ]);
 
   const days = new Set(
-    visits.map((visit) => visit.arrivedAt.toISOString().slice(0, 10)),
+    visits.map((visit) => tripDayKey(visit.arrivedAt, utcOffsetMinutes)),
   );
 
   return {

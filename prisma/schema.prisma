@@ -36,6 +36,10 @@ model Trip {
   /// create a cycle with Photo.tripId and force a nullable two-step insert.
   coverPhotoId String?
   slug         String   @unique
+  /// Minutes to add to a stored UTC instant to get the traveller's wall clock.
+  /// Rome in May is UTC+2, so 120. A real import derives this by comparing a
+  /// photo's EXIF local timestamp against the UTC instant it resolves to.
+  utcOffsetMinutes Int @default(0)
   isPublic     Boolean  @default(false)
   createdAt    DateTime @default(now())
 
@@ -87,6 +91,11 @@ model Photo {
   width        Int
   height       Int
   blurhash     String?
+
+  /// Attribution for stock imagery. Unsplash's API terms require the
+  /// photographer to be credited with a link wherever the photo is shown.
+  photographerName String?
+  photographerUrl  String?
 
   takenAt   DateTime?
   lat       Float?

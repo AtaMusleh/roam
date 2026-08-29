@@ -24,6 +24,7 @@ export async function generateMetadata({
     description: `${formatTripDateRange(
       range?.start ?? trip.startDate,
       range?.end ?? trip.endDate,
+      trip.utcOffsetMinutes,
     )} — ${pluralise(trip.places.length, "place")}.`,
   };
 }
@@ -36,8 +37,8 @@ export default async function TripPage({ params }: PageProps<"/[slug]">) {
   // would confirm that this slug belongs to something.
   if (!trip || !trip.isPublic) notFound();
 
-  const stats = await getTripStats(trip.id);
-  const days = buildTimeline(trip.places);
+  const stats = await getTripStats(trip.id, trip.utcOffsetMinutes);
+  const days = buildTimeline(trip.places, trip.utcOffsetMinutes);
   const range = photographedRange(trip.places);
 
   return (
@@ -55,6 +56,7 @@ export default async function TripPage({ params }: PageProps<"/[slug]">) {
               {formatTripDateRange(
                 range?.start ?? trip.startDate,
                 range?.end ?? trip.endDate,
+                trip.utcOffsetMinutes,
               )}
             </p>
           </div>

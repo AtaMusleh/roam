@@ -9,7 +9,10 @@ import type { TimelineDay, TimelineEntry } from "./types";
  * Pure and synchronous, so it runs once on the server as part of rendering the
  * page rather than in every client that loads it.
  */
-export function buildTimeline(places: readonly TripPlace[]): TimelineDay[] {
+export function buildTimeline(
+  places: readonly TripPlace[],
+  utcOffsetMinutes: number,
+): TimelineDay[] {
   const entries: TimelineEntry[] = [];
 
   for (const place of places) {
@@ -27,6 +30,8 @@ export function buildTimeline(places: readonly TripPlace[]): TimelineDay[] {
           width: photo.width,
           height: photo.height,
           blurhash: photo.blurhash,
+          photographerName: photo.photographerName,
+          photographerUrl: photo.photographerUrl,
         })),
       });
     }
@@ -37,7 +42,7 @@ export function buildTimeline(places: readonly TripPlace[]): TimelineDay[] {
   const days = new Map<string, TimelineDay>();
 
   for (const entry of entries) {
-    const key = tripDayKey(entry.arrivedAt);
+    const key = tripDayKey(entry.arrivedAt, utcOffsetMinutes);
     const day = days.get(key);
 
     if (day) {

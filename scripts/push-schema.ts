@@ -52,6 +52,7 @@ const STATEMENTS: readonly string[] = [
     "endDate" TIMESTAMP(3) NOT NULL,
     "coverPhotoId" TEXT,
     "slug" TEXT NOT NULL,
+    "utcOffsetMinutes" INTEGER NOT NULL DEFAULT 0,
     "isPublic" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Trip_pkey" PRIMARY KEY ("id")
@@ -87,6 +88,8 @@ const STATEMENTS: readonly string[] = [
     "width" INTEGER NOT NULL,
     "height" INTEGER NOT NULL,
     "blurhash" TEXT,
+    "photographerName" TEXT,
+    "photographerUrl" TEXT,
     "takenAt" TIMESTAMP(3),
     "lat" DOUBLE PRECISION,
     "lng" DOUBLE PRECISION,
@@ -104,6 +107,13 @@ const STATEMENTS: readonly string[] = [
     "fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "GeocodeCache_pkey" PRIMARY KEY ("id")
   )`,
+
+  // Columns added after the tables first shipped. `ADD COLUMN IF NOT EXISTS`
+  // makes them safe on a database created before they existed and a no-op on
+  // one created after.
+  `ALTER TABLE "Trip" ADD COLUMN IF NOT EXISTS "utcOffsetMinutes" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "Photo" ADD COLUMN IF NOT EXISTS "photographerName" TEXT`,
+  `ALTER TABLE "Photo" ADD COLUMN IF NOT EXISTS "photographerUrl" TEXT`,
 
   `CREATE UNIQUE INDEX IF NOT EXISTS "Trip_slug_key" ON "Trip"("slug")`,
   `CREATE INDEX IF NOT EXISTS "Place_tripId_idx" ON "Place"("tripId")`,

@@ -75,6 +75,7 @@ export function TripView({ trip, days }: TripViewProps) {
         <PlacePanel
           place={selectedPlace}
           order={selectedOrder}
+          utcOffsetMinutes={trip.utcOffsetMinutes}
           onClose={handleClose}
         />
       </div>
@@ -82,6 +83,7 @@ export function TripView({ trip, days }: TripViewProps) {
       <aside className="lg:w-[24rem] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-border/60">
         <Timeline
           days={days}
+          utcOffsetMinutes={trip.utcOffsetMinutes}
           selectedPlaceId={selectedPlaceId}
           hoveredPlaceId={hoveredPlaceId}
           onSelectPlace={handleSelect}
