@@ -17,8 +17,12 @@
  * is asked about once.
  */
 
-import { haversineDistance } from "./geo";
-import type { LatLng } from "./geo";
+import {
+  haversineDistance,
+  isPointInRing,
+  ringAreaSquareMeters,
+} from "./geo";
+import type { LatLng, Ring } from "./geo";
 import { createRateLimiter, sleep, userAgent } from "./rate-limit";
 
 const DEFAULT_ENDPOINT = "https://overpass-api.de/api/interpreter";
@@ -53,7 +57,16 @@ const DEFAULT_RADIUS_METERS = 150;
  */
 const REQUEST_SPACING_MS = 2_000;
 
-const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * How long to wait for a response.
+ *
+ * Generous, because `out geom` over a dense area is genuinely slow — the Roman
+ * Forum takes the public instance the better part of a minute to assemble, and
+ * at 15s it simply never completed. This does not slow down an outage: an
+ * unreachable host fails on undici's own 10s connect timeout long before this
+ * one applies, which is what keeps the circuit breaker below quick to trip.
+ */
+const REQUEST_TIMEOUT_MS = 75_000;
 
 /** Backoff before each retry after the server pushes back. */
 const RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
@@ -94,6 +107,10 @@ export interface Landmark {
   hasWikidata: boolean;
   /** Composed from the feature's own `addr:*` tags, when it has any. */
   address: string | null;
+  /** Whether the centroid falls inside this feature's polygon. */
+  containsCentroid: boolean;
+  /** Area of the containing polygon in m², when there is one. */
+  areaSquareMeters: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +135,10 @@ export interface Landmark {
  */
 const TAG_SIGNIFICANCE: ReadonlyMap<string, number> = new Map([
   ["tourism=attraction", 100],
+  // A named square is exactly the scale a photo cluster represents: people
+  // stand in it and photograph outward. It is how Piazza Navona and Campo de'
+  // Fiori are tagged, and it should beat anything standing inside them.
+  ["place=square", 95],
   ["tourism=museum", 90],
   ["tourism=gallery", 88],
   ["amenity=place_of_worship", 80],
@@ -139,6 +160,37 @@ const TAG_SIGNIFICANCE: ReadonlyMap<string, number> = new Map([
 const HISTORIC_FALLBACK_SIGNIFICANCE = 62;
 
 const BUILDING_SIGNIFICANCE = 30;
+
+/**
+ * Tags marking a feature as an *object standing in a place*, rather than the
+ * place itself.
+ *
+ * These are the things that kept winning: the statue in Campo de' Fiori, the
+ * fountain in Piazza Navona, the gate at St Peter's. Each is real, named, and
+ * close to the centroid — and none of them is where the visitor thinks they
+ * were. A feature carrying one of these is chosen only when nothing else
+ * qualifies at all.
+ */
+const OBJECT_LIKE_TAGS: ReadonlySet<string> = new Set([
+  "historic=memorial",
+  "historic=monument",
+  "tourism=artwork",
+  "man_made=fountain",
+]);
+
+/** Keys whose every value marks an object: a gate, a door, a bollard. */
+const OBJECT_LIKE_KEYS: readonly string[] = ["barrier", "entrance"];
+
+/**
+ * A feature scoring at least this much is a place in its own right, and is not
+ * demoted even if it also carries an object-like tag.
+ *
+ * The Trevi Fountain is the case in point: `tourism=attraction` alongside
+ * `amenity=fountain`. It is a fountain, and it is also unmistakably the place.
+ * The threshold sits just above `historic=*`'s generic score, so the
+ * "Oceano" statue — `tourism=artwork` plus `historic=heritage` — stays demoted.
+ */
+const PLACE_SCALE_SIGNIFICANCE = 70;
 
 /**
  * Width of the distance bands used for ranking, in metres.
@@ -164,6 +216,90 @@ interface Candidate {
   hasWikidata: boolean;
   distanceMeters: number;
   address: string | null;
+  /** The centroid falls inside this feature's polygon. */
+  containsCentroid: boolean;
+  /** Area of the smallest containing ring, in m². */
+  areaSquareMeters: number | null;
+  /** An object standing in a place, rather than the place. */
+  objectLike: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Geometry
+// ---------------------------------------------------------------------------
+
+/** Two OSM positions are the same node if their coordinates match exactly. */
+function samePoint(a: LatLng, b: LatLng): boolean {
+  return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lng - b.lng) < 1e-9;
+}
+
+function isClosed(ring: readonly LatLng[]): boolean {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  return first !== undefined && last !== undefined && samePoint(first, last);
+}
+
+/**
+ * Stitches way fragments into closed rings.
+ *
+ * A multipolygon relation does not arrive as a polygon. Overpass returns its
+ * `outer` members as the individual ways they are mapped as, in no particular
+ * order and in no particular direction — the Roman Forum comes back as 141
+ * fragments, most of them two points long. They only become a boundary once
+ * joined end to end, so that is what this does: take a fragment, keep
+ * attaching whichever unused fragment shares an endpoint (reversing it if
+ * needed) until the chain closes on itself, then start again.
+ *
+ * Fragments that never close are discarded. An unclosed boundary encloses
+ * nothing, and guessing at how to shut it would invent geometry that is not in
+ * the map.
+ */
+function assembleRings(fragments: readonly (readonly LatLng[])[]): Ring[] {
+  const pool = fragments
+    .filter((fragment) => fragment.length >= 2)
+    .map((fragment) => [...fragment]);
+
+  const rings: Ring[] = [];
+
+  while (pool.length > 0) {
+    let chain = pool.pop() as LatLng[];
+
+    let extended = true;
+    while (extended && !isClosed(chain)) {
+      extended = false;
+
+      const head = chain[0] as LatLng;
+      const tail = chain[chain.length - 1] as LatLng;
+
+      for (let i = 0; i < pool.length; i += 1) {
+        const fragment = pool[i] as LatLng[];
+        const start = fragment[0] as LatLng;
+        const end = fragment[fragment.length - 1] as LatLng;
+
+        if (samePoint(tail, start)) {
+          chain = chain.concat(fragment.slice(1));
+        } else if (samePoint(tail, end)) {
+          chain = chain.concat([...fragment].reverse().slice(1));
+        } else if (samePoint(head, end)) {
+          chain = fragment.slice(0, -1).concat(chain);
+        } else if (samePoint(head, start)) {
+          chain = [...fragment].reverse().slice(0, -1).concat(chain);
+        } else {
+          continue;
+        }
+
+        pool.splice(i, 1);
+        extended = true;
+        break;
+      }
+    }
+
+    // Four points is the minimum for a closed ring enclosing any area: three
+    // corners plus the repeated first point.
+    if (chain.length >= 4 && isClosed(chain)) rings.push(chain);
+  }
+
+  return rings;
 }
 
 /**
@@ -185,7 +321,13 @@ function classify(
     }
   };
 
-  for (const key of ["tourism", "amenity", "leisure", "historic"] as const) {
+  for (const key of [
+    "tourism",
+    "amenity",
+    "leisure",
+    "historic",
+    "place",
+  ] as const) {
     const value = tags[key];
     if (value === undefined) continue;
 
@@ -227,10 +369,68 @@ function composeAddress(tags: Record<string, string>): string | null {
 }
 
 /**
- * Orders candidates best-first: nearest band, then most notable, then most
- * significant tag, then genuinely nearest.
+ * Whether a feature is an object standing in a place rather than the place.
+ *
+ * The two demotions work differently on purpose.
+ *
+ * `barrier` and `entrance` demote outright, whatever else the feature is
+ * tagged as. Their whole meaning is "this is the way through the edge of
+ * something", which is never the something. A monumental gate that really is
+ * the landmark still gets chosen — demotion only ranks it last, and last of
+ * one is first.
+ *
+ * The tag *values* — memorial, monument, artwork, fountain — describe scale
+ * rather than function, and can sit on a feature that is genuinely the place.
+ * Those are only demoted when nothing else about the feature says otherwise,
+ * which is what `PLACE_SCALE_SIGNIFICANCE` decides.
+ */
+function isObjectLike(
+  tags: Record<string, string>,
+  significance: number,
+): boolean {
+  if (OBJECT_LIKE_KEYS.some((key) => tags[key] !== undefined)) return true;
+
+  if (significance >= PLACE_SCALE_SIGNIFICANCE) return false;
+
+  return Object.entries(tags).some(([key, value]) =>
+    OBJECT_LIKE_TAGS.has(`${key}=${value}`),
+  );
+}
+
+/**
+ * Orders candidates best-first.
+ *
+ * Containment comes first and outranks everything, because it is the strongest
+ * statement available: if the centroid falls inside a named area, the visitor
+ * was *in* that area, and no point feature's proximity competes with that. A
+ * statue two metres from the centroid is two metres away; the square the
+ * centroid sits in encloses it.
+ *
+ * Then the demotion, applied within each containment tier, so that a monument
+ * whose own polygon happens to contain the centroid still loses to the piazza
+ * containing them both.
+ *
+ * Then, among containing areas, the *smallest* wins. Containment nests — the
+ * basilica sits in the piazza, which sits in the rione, which sits in the city
+ * — and the smallest enclosing area is the most specific true statement about
+ * where the photos were taken.
+ *
+ * Only when nothing contains the centroid do the older criteria decide: the
+ * nearest distance band, then notability, then tag significance.
  */
 function compareCandidates(a: Candidate, b: Candidate): number {
+  if (a.containsCentroid !== b.containsCentroid) {
+    return a.containsCentroid ? -1 : 1;
+  }
+
+  if (a.objectLike !== b.objectLike) return a.objectLike ? 1 : -1;
+
+  if (a.containsCentroid && b.containsCentroid) {
+    const areaA = a.areaSquareMeters ?? Number.POSITIVE_INFINITY;
+    const areaB = b.areaSquareMeters ?? Number.POSITIVE_INFINITY;
+    if (areaA !== areaB) return areaA - areaB;
+  }
+
   const bandA = Math.floor(a.distanceMeters / DISTANCE_BAND_METERS);
   const bandB = Math.floor(b.distanceMeters / DISTANCE_BAND_METERS);
   if (bandA !== bandB) return bandA - bandB;
@@ -256,16 +456,24 @@ function compareCandidates(a: Candidate, b: Candidate): number {
 function buildQuery(point: LatLng, radiusMeters: number): string {
   const around = `around:${radiusMeters},${point.lat},${point.lng}`;
 
-  return `[out:json][timeout:25];
+  // `out geom` rather than `out center`, so ways arrive with their outline and
+  // multipolygon relations with their members' — without which containment
+  // cannot be tested. It is the expensive part of this query: the Roman Forum
+  // returns around 170KB of coordinates. Acceptable because a coordinate is
+  // asked about once and then cached forever, and the server timeout is raised
+  // to match. Note it is `out geom` alone: adding `tags` switches the output
+  // mode and silently drops the relation members that the geometry lives on.
+  return `[out:json][timeout:60];
 (
   nwr(${around})["name"]["tourism"~"^(attraction|museum|artwork|gallery|viewpoint)$"];
   nwr(${around})["name"]["historic"];
   nwr(${around})["name"]["amenity"="place_of_worship"];
   nwr(${around})["name"]["leisure"="park"];
+  nwr(${around})["name"]["place"="square"];
   nwr(${around})["name"]["building"]["wikidata"];
   nwr(${around})["name"]["building"]["wikipedia"];
 );
-out center tags;`;
+out geom;`;
 }
 
 interface OverpassElement {
@@ -273,6 +481,9 @@ interface OverpassElement {
   lat?: unknown;
   lon?: unknown;
   center?: unknown;
+  bounds?: unknown;
+  geometry?: unknown;
+  members?: unknown;
   tags?: unknown;
 }
 
@@ -280,10 +491,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Reads an element's position: its own for a node, `center` for a way. */
+/**
+ * Reads an element's representative position: its own for a node, the centre of
+ * its bounding box for a way or relation.
+ *
+ * `out geom` gives ways and relations `bounds` instead of the `center` that
+ * `out center` would; the midpoint of the bounds serves the same purpose, and
+ * is only used for distance ranking among features that do *not* contain the
+ * centroid.
+ */
 function positionOf(element: OverpassElement): LatLng | null {
   if (typeof element.lat === "number" && typeof element.lon === "number") {
     return { lat: element.lat, lng: element.lon };
+  }
+
+  if (isRecord(element.bounds)) {
+    const { minlat, minlon, maxlat, maxlon } = element.bounds;
+    if (
+      typeof minlat === "number" &&
+      typeof minlon === "number" &&
+      typeof maxlat === "number" &&
+      typeof maxlon === "number"
+    ) {
+      return { lat: (minlat + maxlat) / 2, lng: (minlon + maxlon) / 2 };
+    }
   }
 
   if (isRecord(element.center)) {
@@ -294,6 +525,56 @@ function positionOf(element: OverpassElement): LatLng | null {
   }
 
   return null;
+}
+
+/** Reads an Overpass `geometry` array into points, dropping any gaps. */
+function readGeometry(value: unknown): LatLng[] {
+  if (!Array.isArray(value)) return [];
+
+  const points: LatLng[] = [];
+
+  for (const entry of value) {
+    // A way clipped by the query area has `null` holes where nodes are
+    // missing. Such a fragment cannot be trusted to close, and is dropped.
+    if (!isRecord(entry)) return [];
+
+    const { lat, lon } = entry;
+    if (typeof lat !== "number" || typeof lon !== "number") return [];
+
+    points.push({ lat, lng: lon });
+  }
+
+  return points;
+}
+
+/**
+ * Reads an element's outer rings.
+ *
+ * A way is one ring, if its geometry closes. A relation is a set of fragments
+ * that have to be stitched, which `assembleRings` does. `inner` members —
+ * holes — are ignored: they would only ever exclude a centroid from an area it
+ * visually sits in (a courtyard within a building), and treating the outline as
+ * solid is the better answer for naming a place.
+ */
+function outerRingsOf(element: OverpassElement): Ring[] {
+  const own = readGeometry(element.geometry);
+  if (own.length >= 4 && isClosed(own)) return [own];
+
+  if (!Array.isArray(element.members)) return [];
+
+  const fragments: LatLng[][] = [];
+
+  for (const member of element.members) {
+    if (!isRecord(member)) continue;
+
+    const role = member.role;
+    if (role !== "outer" && role !== "") continue;
+
+    const points = readGeometry(member.geometry);
+    if (points.length >= 2) fragments.push(points);
+  }
+
+  return assembleRings(fragments);
 }
 
 function stringTags(value: unknown): Record<string, string> | null {
@@ -333,7 +614,22 @@ async function attemptRequest(query: string): Promise<unknown> {
       }),
     );
 
-    if (response.ok) return response.json();
+    if (response.ok) {
+      // A busy Overpass answers 200 with an HTML page saying so, rather than
+      // an error status. Parsing the body is the only way to tell that apart
+      // from a real answer, and it is worth retrying like any other
+      // backpressure signal.
+      const text = await response.text();
+
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        lastError = new Error(
+          "Overpass returned a non-JSON body, most likely a server-busy page",
+        );
+        continue;
+      }
+    }
 
     lastError = new Error(
       `Overpass replied ${response.status} ${response.statusText}`,
@@ -446,6 +742,20 @@ export function selectLandmark(
     const classified = classify(tags, hasWikidata || hasWikipedia);
     if (!classified) continue;
 
+    // Smallest containing ring, if any. A feature can have several outer rings
+    // (a multipolygon in pieces); the one the centroid is actually in is the
+    // one whose size says how specific this answer is.
+    let areaSquareMeters: number | null = null;
+
+    for (const ring of outerRingsOf(element)) {
+      if (!isPointInRing(point, ring)) continue;
+
+      const area = ringAreaSquareMeters(ring);
+      if (areaSquareMeters === null || area < areaSquareMeters) {
+        areaSquareMeters = area;
+      }
+    }
+
     candidates.push({
       name,
       kind: classified.kind,
@@ -454,6 +764,9 @@ export function selectLandmark(
       hasWikidata,
       distanceMeters: haversineDistance(point, position),
       address: composeAddress(tags),
+      containsCentroid: areaSquareMeters !== null,
+      areaSquareMeters,
+      objectLike: isObjectLike(tags, classified.significance),
     });
   }
 
@@ -468,5 +781,7 @@ export function selectLandmark(
     distanceMeters: best.distanceMeters,
     hasWikidata: best.hasWikidata,
     address: best.address,
+    containsCentroid: best.containsCentroid,
+    areaSquareMeters: best.areaSquareMeters,
   };
 }

@@ -147,3 +147,102 @@ export function interpolate(a: LatLng, b: LatLng, t: number): LatLng {
     lng: normalizeLongitude(toDegrees(Math.atan2(y, x))),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Polygons
+// ---------------------------------------------------------------------------
+
+/**
+ * A closed ring of points. The first and last point may or may not be repeated;
+ * both forms are treated as closed.
+ */
+export type Ring = readonly LatLng[];
+
+/**
+ * Whether a point lies inside a polygon ring.
+ *
+ * Ray casting: count how many times a ray running east from the point crosses
+ * the ring's edges. An odd count means inside. Points exactly on an edge are
+ * not guaranteed either way, which does not matter for the use here — deciding
+ * whether a photo cluster's centroid sits within a named area, where a metre
+ * of ambiguity at the boundary changes nothing.
+ *
+ * Treats latitude and longitude as plane coordinates. That is sound for the
+ * polygons this is used on — a piazza, a basilica, an archaeological site —
+ * where the convergence of meridians over a few hundred metres is far below
+ * the precision that matters. It would be wrong for a ring spanning the
+ * antimeridian or enclosing a pole.
+ */
+export function isPointInRing(point: LatLng, ring: Ring): boolean {
+  if (ring.length < 3) return false;
+
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const a = ring[i] as LatLng;
+    const b = ring[j] as LatLng;
+
+    // Does the edge straddle the point's latitude? Using a half-open test
+    // (one end strictly above, the other not) counts a vertex exactly once,
+    // which is what keeps the parity correct when the ray passes through one.
+    const straddles = a.lat > point.lat !== b.lat > point.lat;
+    if (!straddles) continue;
+
+    // Longitude where the edge crosses the point's latitude.
+    const crossingLng =
+      a.lng + ((point.lat - a.lat) * (b.lng - a.lng)) / (b.lat - a.lat);
+
+    if (point.lng < crossingLng) inside = !inside;
+  }
+
+  return inside;
+}
+
+/**
+ * Whether a point lies inside a polygon: within its outer ring, and not inside
+ * any of its holes.
+ */
+export function isPointInPolygon(
+  point: LatLng,
+  outerRings: readonly Ring[],
+  holes: readonly Ring[] = [],
+): boolean {
+  const inOuter = outerRings.some((ring) => isPointInRing(point, ring));
+  if (!inOuter) return false;
+
+  return !holes.some((ring) => isPointInRing(point, ring));
+}
+
+/**
+ * Area of a polygon ring, in square metres.
+ *
+ * The ring is projected onto a local east/north plane centred on its first
+ * point and measured with the shoelace formula. Accurate to well under a
+ * percent for anything up to a few kilometres across, which is all this is used
+ * for: comparing a basilica against the piazza it stands in, to find the more
+ * specific of the two.
+ */
+export function ringAreaSquareMeters(ring: Ring): number {
+  if (ring.length < 3) return 0;
+
+  const origin = ring[0] as LatLng;
+  const metresPerDegreeLat = EARTH_RADIUS_M * DEG_TO_RAD;
+  const metresPerDegreeLng =
+    metresPerDegreeLat * Math.cos(origin.lat * DEG_TO_RAD);
+
+  let doubleArea = 0;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const a = ring[i] as LatLng;
+    const b = ring[j] as LatLng;
+
+    const ax = (a.lng - origin.lng) * metresPerDegreeLng;
+    const ay = (a.lat - origin.lat) * metresPerDegreeLat;
+    const bx = (b.lng - origin.lng) * metresPerDegreeLng;
+    const by = (b.lat - origin.lat) * metresPerDegreeLat;
+
+    doubleArea += bx * ay - ax * by;
+  }
+
+  return Math.abs(doubleArea) / 2;
+}
