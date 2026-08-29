@@ -1,9 +1,9 @@
 "use client";
 
-import { decode } from "blurhash";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
+import { BlurhashCanvas } from "@/components/blurhash-canvas";
 import { UNSPLASH_HOME } from "@/lib/unsplash";
 import { cn } from "@/lib/utils";
 
@@ -18,60 +18,40 @@ export interface PhotoGridItem {
   photographerUrl: string | null;
 }
 
+/**
+ * The credit links become clickable exactly when the caption is visible.
+ *
+ * They have to opt back in to pointer events, because the caption around them
+ * has opted out — and they must opt in only while shown, or an invisible link
+ * would intercept clicks meant for the photograph beneath it.
+ */
+const CREDIT_LINK = cn(
+  "pointer-events-none underline underline-offset-2 hover:text-white",
+  "group-hover:pointer-events-auto group-focus-within:pointer-events-auto",
+  "[@media(hover:none)]:pointer-events-auto",
+);
+
 interface PhotoGridProps {
   photos: readonly PhotoGridItem[];
   /** Passed to `next/image`; the grid does not know its own column widths. */
   sizes?: string;
   className?: string;
+  /**
+   * Called when a photograph is clicked. Omit to leave the grid display-only.
+   * The element is passed back so focus can return to it afterwards.
+   */
+  onOpen?: (photoId: string, origin: HTMLElement) => void;
 }
 
-/** Resolution the blurhash is decoded at. It is about to be blurred anyway. */
-const BLURHASH_SIZE = 32;
-
-/**
- * The blurred stand-in shown while a photograph loads.
- *
- * A blurhash is around thirty characters that decode to a handful of pixels,
- * so the placeholder arrives with the page rather than as another request. It
- * is drawn at 32x32 and stretched by the browser, which is where the blur
- * comes from — no filter needed.
- */
-function BlurhashCanvas({ hash }: { hash: string }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    let pixels: Uint8ClampedArray;
-    try {
-      pixels = decode(hash, BLURHASH_SIZE, BLURHASH_SIZE);
-    } catch {
-      // A malformed hash is not worth failing a photograph over; the muted
-      // background behind this canvas is a perfectly good placeholder.
-      return;
-    }
-
-    const image = context.createImageData(BLURHASH_SIZE, BLURHASH_SIZE);
-    image.data.set(pixels);
-    context.putImageData(image, 0, 0);
-  }, [hash]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={BLURHASH_SIZE}
-      height={BLURHASH_SIZE}
-      aria-hidden
-      className="absolute inset-0 h-full w-full"
-    />
-  );
-}
-
-function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
+function GridPhoto({
+  photo,
+  sizes,
+  onOpen,
+}: {
+  photo: PhotoGridItem;
+  sizes: string;
+  onOpen?: (photoId: string, origin: HTMLElement) => void;
+}) {
   const [loaded, setLoaded] = useState(false);
 
   return (
@@ -86,6 +66,27 @@ function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
         style={{ aspectRatio: `${photo.width} / ${photo.height}` }}
       >
         {photo.blurhash !== null && <BlurhashCanvas hash={photo.blurhash} />}
+
+        {onOpen !== undefined && (
+          /*
+            The button sits above the image rather than wrapping it, so the
+            figure keeps its aspect-ratio box and the credit below stays a
+            sibling — a link inside a button is not something to hand a
+            screen reader.
+          */
+          <button
+            type="button"
+            onClick={(event) => {
+              onOpen(photo.id, event.currentTarget);
+            }}
+            aria-label={
+              photo.photographerName === null
+                ? "Open photo"
+                : `Open photo by ${photo.photographerName}`
+            }
+            className="absolute inset-0 z-10 cursor-zoom-in focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:outline-none"
+          />
+        )}
 
         <Image
           src={photo.url}
@@ -112,7 +113,13 @@ function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
           */
           <figcaption
             className={cn(
-              "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent",
+              // Painted above the click target that opens the lightbox, but
+              // transparent to the pointer. An `opacity-0` element still
+              // catches clicks, and this one covers the bottom third of every
+              // thumbnail — left interactive, it silently swallows every click
+              // aimed at that part of the photograph.
+              "pointer-events-none absolute inset-x-0 bottom-0 z-20",
+              "bg-gradient-to-t from-black/80 to-transparent",
               "px-2 pb-1.5 pt-6 text-[10px] leading-tight text-white/90",
               "opacity-0 transition-opacity duration-200",
               "group-hover:opacity-100 group-focus-within:opacity-100",
@@ -124,17 +131,12 @@ function GridPhoto({ photo, sizes }: { photo: PhotoGridItem; sizes: string }) {
               href={photo.photographerUrl ?? UNSPLASH_HOME}
               target="_blank"
               rel="noreferrer noopener"
-              className="underline underline-offset-2 hover:text-white"
+              className={CREDIT_LINK}
             >
               {photo.photographerName}
             </a>{" "}
             on{" "}
-            <a
-              href={UNSPLASH_HOME}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="underline underline-offset-2 hover:text-white"
-            >
+            <a href={UNSPLASH_HOME} target="_blank" rel="noreferrer noopener" className={CREDIT_LINK}>
               Unsplash
             </a>
           </figcaption>
@@ -156,6 +158,7 @@ export function PhotoGrid({
   photos,
   sizes = "(min-width: 1024px) 20vw, (min-width: 640px) 30vw, 45vw",
   className,
+  onOpen,
 }: PhotoGridProps) {
   if (photos.length === 0) {
     return (
@@ -168,7 +171,7 @@ export function PhotoGrid({
   return (
     <div className={cn("columns-2 gap-2 sm:columns-3", className)}>
       {photos.map((photo) => (
-        <GridPhoto key={photo.id} photo={photo} sizes={sizes} />
+        <GridPhoto key={photo.id} photo={photo} sizes={sizes} onOpen={onOpen} />
       ))}
     </div>
   );

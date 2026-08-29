@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { TripMap } from "@/components/map/trip-map";
 import type { MapPlace } from "@/components/map/trip-map";
+import { LightboxProvider } from "@/components/photo-lightbox";
 import { PlacePanel } from "@/components/place/place-panel";
 import { Timeline } from "@/components/timeline/timeline";
 import type { TimelineDay } from "@/components/timeline/types";
@@ -63,33 +64,37 @@ export function TripView({ trip, days }: TripViewProps) {
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
-      <div className="relative h-[55dvh] shrink-0 border-b border-border/60 lg:h-auto lg:min-h-0 lg:flex-1 lg:border-b-0">
-        <TripMap
-          places={mapPlaces}
-          selectedPlaceId={selectedPlaceId}
-          hoveredPlaceId={hoveredPlaceId}
-          onSelectPlace={handleSelect}
-        />
+    // The lightbox lives above both panes: the timeline strips and the place
+    // panel open the same overlay, and only ever one at a time.
+    <LightboxProvider>
+      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+        <div className="relative h-[55dvh] shrink-0 border-b border-border/60 lg:h-auto lg:min-h-0 lg:flex-1 lg:border-b-0">
+          <TripMap
+            places={mapPlaces}
+            selectedPlaceId={selectedPlaceId}
+            hoveredPlaceId={hoveredPlaceId}
+            onSelectPlace={handleSelect}
+          />
 
-        <PlacePanel
-          place={selectedPlace}
-          order={selectedOrder}
-          utcOffsetMinutes={trip.utcOffsetMinutes}
-          onClose={handleClose}
-        />
+          <PlacePanel
+            place={selectedPlace}
+            order={selectedOrder}
+            utcOffsetMinutes={trip.utcOffsetMinutes}
+            onClose={handleClose}
+          />
+        </div>
+
+        <aside className="lg:w-[24rem] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-border/60">
+          <Timeline
+            days={days}
+            utcOffsetMinutes={trip.utcOffsetMinutes}
+            selectedPlaceId={selectedPlaceId}
+            hoveredPlaceId={hoveredPlaceId}
+            onSelectPlace={handleSelect}
+            onHoverPlace={setHoveredPlaceId}
+          />
+        </aside>
       </div>
-
-      <aside className="lg:w-[24rem] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-border/60">
-        <Timeline
-          days={days}
-          utcOffsetMinutes={trip.utcOffsetMinutes}
-          selectedPlaceId={selectedPlaceId}
-          hoveredPlaceId={hoveredPlaceId}
-          onSelectPlace={handleSelect}
-          onHoverPlace={setHoveredPlaceId}
-        />
-      </aside>
-    </div>
+    </LightboxProvider>
   );
 }

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 
 import { PhotoGrid } from "@/components/photo-grid";
 import type { PhotoGridItem } from "@/components/photo-grid";
+import { useLightbox } from "@/components/photo-lightbox";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -23,18 +24,44 @@ interface PlacePanelProps {
   onClose: () => void;
 }
 
+function toGridItem(photo: TripPlace["visits"][number]["photos"][number]): PhotoGridItem {
+  return {
+    id: photo.id,
+    url: photo.url,
+    width: photo.width,
+    height: photo.height,
+    blurhash: photo.blurhash,
+    photographerName: photo.photographerName,
+    photographerUrl: photo.photographerUrl,
+  };
+}
+
 function photosOf(place: TripPlace): PhotoGridItem[] {
-  return place.visits.flatMap((visit) =>
-    visit.photos.map((photo) => ({
-      id: photo.id,
-      url: photo.url,
-      width: photo.width,
-      height: photo.height,
-      blurhash: photo.blurhash,
-      photographerName: photo.photographerName,
-      photographerUrl: photo.photographerUrl,
-    })),
-  );
+  return place.visits.flatMap((visit) => visit.photos.map(toGridItem));
+}
+
+/**
+ * Where each photograph sits within its own visit.
+ *
+ * The grid shows a place's photographs as one wall, but the lightbox steps
+ * through a *visit*: a café photographed on Monday and again on Thursday is one
+ * place and two occasions, and arrowing from one into the other would be a jump
+ * across three days. This maps each photograph back to the visit it came from
+ * so the set to browse is the right one.
+ */
+function visitGroups(
+  place: TripPlace,
+): Map<string, { photos: PhotoGridItem[]; index: number }> {
+  const groups = new Map<string, { photos: PhotoGridItem[]; index: number }>();
+
+  for (const visit of place.visits) {
+    const photos = visit.photos.map(toGridItem);
+    photos.forEach((photo, index) => {
+      groups.set(photo.id, { photos, index });
+    });
+  }
+
+  return groups;
 }
 
 /** Name, position, when the traveller was there, and everything they took. */
@@ -46,6 +73,8 @@ function PlaceDetail({
   utcOffsetMinutes: number;
 }) {
   const photos = photosOf(place);
+  const groups = visitGroups(place);
+  const openLightbox = useLightbox();
 
   return (
     <div className="space-y-5">
@@ -93,6 +122,17 @@ function PlaceDetail({
           photos={photos}
           sizes="(min-width: 1024px) 10rem, 30vw"
           className="columns-2 sm:columns-2"
+          onOpen={(photoId, origin) => {
+            const group = groups.get(photoId);
+            if (!group) return;
+
+            openLightbox({
+              photos: group.photos,
+              index: group.index,
+              origin,
+              label: place.name,
+            });
+          }}
         />
       </section>
     </div>

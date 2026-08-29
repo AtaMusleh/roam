@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef } from "react";
 
+import { useLightbox } from "@/components/photo-lightbox";
 import { formatTripDay, formatTripTime, pluralise } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ function EntryRow({
   hovered,
   onSelect,
   onHover,
+  onOpenPhoto,
   registerRef,
 }: {
   entry: TimelineEntry;
@@ -35,22 +37,36 @@ function EntryRow({
   hovered: boolean;
   onSelect: () => void;
   onHover: (hovering: boolean) => void;
+  onOpenPhoto: (index: number, origin: HTMLElement) => void;
   registerRef: (element: HTMLLIElement | null) => void;
 }) {
   const thumbnails = entry.photos.slice(0, THUMBNAIL_LIMIT);
   const remaining = entry.photoCount - thumbnails.length;
 
+  // The row and the thumbnails are separate controls, not one wrapping the
+  // other: a button inside a button is invalid, and a screen reader given one
+  // announces something incoherent. The wrapper carries the hover state so the
+  // whole row still highlights as one thing.
   return (
-    <li ref={registerRef} data-place-id={entry.placeId}>
+    <li
+      ref={registerRef}
+      data-place-id={entry.placeId}
+      onMouseEnter={() => {
+        onHover(true);
+      }}
+      onMouseLeave={() => {
+        onHover(false);
+      }}
+      className={cn(
+        "rounded-lg border border-transparent px-3 py-3",
+        "transition-colors duration-150",
+        selected && "border-roam-accent/40 bg-muted/60",
+        !selected && hovered && "bg-muted/40",
+      )}
+    >
       <button
         type="button"
         onClick={onSelect}
-        onMouseEnter={() => {
-          onHover(true);
-        }}
-        onMouseLeave={() => {
-          onHover(false);
-        }}
         onFocus={() => {
           onHover(true);
         }}
@@ -59,11 +75,8 @@ function EntryRow({
         }}
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "w-full cursor-pointer rounded-lg border border-transparent px-3 py-3 text-left",
-          "transition-colors duration-150 outline-none",
-          "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-roam-accent/60",
-          selected && "border-roam-accent/40 bg-muted/60",
-          !selected && hovered && "bg-muted/40",
+          "w-full cursor-pointer rounded text-left outline-none",
+          "focus-visible:ring-2 focus-visible:ring-roam-accent/60",
         )}
       >
         <div className="flex items-baseline gap-3">
@@ -87,32 +100,53 @@ function EntryRow({
             {entry.photoCount}
           </span>
         </div>
-
-        {thumbnails.length > 0 && (
-          <div className="mt-2 flex gap-1">
-            {thumbnails.map((photo) => (
-              <div
-                key={photo.id}
-                className="relative h-12 w-12 shrink-0 overflow-hidden rounded bg-muted"
-              >
-                <Image
-                  src={photo.url}
-                  alt=""
-                  fill
-                  sizes="48px"
-                  className="object-cover"
-                />
-              </div>
-            ))}
-
-            {remaining > 0 && (
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-muted text-[11px] text-muted-foreground tabular-nums">
-                +{remaining}
-              </div>
-            )}
-          </div>
-        )}
       </button>
+
+      {thumbnails.length > 0 && (
+        <div className="mt-2 flex gap-1">
+          {thumbnails.map((photo, position) => (
+            <button
+              key={photo.id}
+              type="button"
+              onClick={(event) => {
+                onOpenPhoto(position, event.currentTarget);
+              }}
+              aria-label={`Open photo ${position + 1} of ${entry.photoCount} from ${entry.placeName}`}
+              className={cn(
+                "relative h-12 w-12 shrink-0 cursor-zoom-in overflow-hidden rounded bg-muted",
+                "outline-none focus-visible:ring-2 focus-visible:ring-roam-accent",
+              )}
+            >
+              <Image
+                src={photo.url}
+                alt=""
+                fill
+                sizes="48px"
+                className="object-cover"
+              />
+            </button>
+          ))}
+
+          {remaining > 0 && (
+            // Opens the first photograph beyond the strip, so the overflow
+            // count is a way in rather than a dead end.
+            <button
+              type="button"
+              onClick={(event) => {
+                onOpenPhoto(THUMBNAIL_LIMIT, event.currentTarget);
+              }}
+              aria-label={`Open the remaining ${remaining} photos from ${entry.placeName}`}
+              className={cn(
+                "flex h-12 w-12 shrink-0 cursor-zoom-in items-center justify-center rounded bg-muted",
+                "text-[11px] text-muted-foreground tabular-nums",
+                "outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-roam-accent",
+              )}
+            >
+              +{remaining}
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }
@@ -135,6 +169,7 @@ export function Timeline({
 }: TimelineProps) {
   /** The first row for each place, so a selection can be scrolled to. */
   const rowsRef = useRef(new Map<string, HTMLLIElement>());
+  const openLightbox = useLightbox();
 
   // Selecting a place on the map has to bring its entry into view, or the
   // highlight lands somewhere the reader cannot see — on a five-day trip most
@@ -189,6 +224,14 @@ export function Timeline({
                   }}
                   onHover={(hovering) => {
                     onHoverPlace(hovering ? entry.placeId : null);
+                  }}
+                  onOpenPhoto={(index, origin) => {
+                    openLightbox({
+                      photos: entry.photos,
+                      index,
+                      origin,
+                      label: entry.placeName,
+                    });
                   }}
                   registerRef={(element) => {
                     if (!isFirstRowForPlace) return;

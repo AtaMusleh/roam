@@ -69,6 +69,47 @@ export function withReferral(url: string): string {
 /** The Unsplash link to credit alongside the photographer. */
 export const UNSPLASH_HOME = withReferral("https://unsplash.com/");
 
+/**
+ * Rewrites an Unsplash image URL to ask for a different size.
+ *
+ * The cached URL is the `regular` variant, about 1080px wide — right for a
+ * thumbnail in a grid and visibly soft filling a screen. Unsplash serves its
+ * images through an imaging CDN that takes the size as query parameters, so a
+ * larger version is the same URL with a bigger `w`. Nothing is copied or
+ * re-hosted; this is still the hotlink the terms require.
+ *
+ * `naturalWidth` caps the request at the photograph's real size. Asking for
+ * more than exists would return an upscaled image — bytes spent on pixels the
+ * photographer never took.
+ *
+ * Any URL that is not an Unsplash one is returned untouched, so a trip whose
+ * photographs come from somewhere else still works.
+ */
+export function unsplashVariant(
+  url: string,
+  targetWidth: number,
+  naturalWidth: number,
+): string {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+
+  if (parsed.hostname !== "images.unsplash.com") return url;
+
+  parsed.searchParams.set("w", String(Math.round(Math.min(targetWidth, naturalWidth))));
+  // `max` fits within the box without cropping, which is what the lightbox
+  // wants: the whole photograph, never a centre crop of it.
+  parsed.searchParams.set("fit", "max");
+  parsed.searchParams.set("q", "85");
+  parsed.searchParams.set("auto", "format");
+
+  return parsed.toString();
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
