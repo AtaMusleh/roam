@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { PhotoGrid } from "@/components/photo-grid";
 import type { PhotoGridItem } from "@/components/photo-grid";
 import { useLightbox } from "@/components/photo-lightbox";
+import { PlaceEditDialogs } from "@/components/place/place-edit-dialogs";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -20,7 +21,11 @@ import type { TripPlace } from "@/lib/queries";
 interface PlacePanelProps {
   place: TripPlace | null;
   order: number | null;
+  /** Every place on the trip, so this one can be merged into another. */
+  places: readonly TripPlace[];
   utcOffsetMinutes: number;
+  /** Whether this deployment permits manual corrections. */
+  canEdit: boolean;
   onClose: () => void;
 }
 
@@ -67,10 +72,16 @@ function visitGroups(
 /** Name, position, when the traveller was there, and everything they took. */
 function PlaceDetail({
   place,
+  places,
   utcOffsetMinutes,
+  canEdit,
+  onClose,
 }: {
   place: TripPlace;
+  places: readonly TripPlace[];
   utcOffsetMinutes: number;
+  canEdit: boolean;
+  onClose: () => void;
 }) {
   const photos = photosOf(place);
   const groups = visitGroups(place);
@@ -116,6 +127,20 @@ function PlaceDetail({
           ))}
         </ul>
       </section>
+
+      {canEdit && (
+        <section className="space-y-1.5 border-t border-border/60 pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Corrections
+          </h3>
+          <PlaceEditDialogs
+            place={place}
+            otherPlaces={places.filter((candidate) => candidate.id !== place.id)}
+            utcOffsetMinutes={utcOffsetMinutes}
+            onDeleted={onClose}
+          />
+        </section>
+      )}
 
       <section>
         <PhotoGrid
@@ -175,7 +200,9 @@ function PanelHeading({ place, order }: { place: TripPlace; order: number | null
 export function PlacePanel({
   place,
   order,
+  places,
   utcOffsetMinutes,
+  canEdit,
   onClose,
 }: PlacePanelProps) {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
@@ -213,7 +240,13 @@ export function PlacePanel({
           </SheetHeader>
 
           <div className="px-4 pb-6">
-            <PlaceDetail place={place} utcOffsetMinutes={utcOffsetMinutes} />
+            <PlaceDetail
+              place={place}
+              places={places}
+              utcOffsetMinutes={utcOffsetMinutes}
+              canEdit={canEdit}
+              onClose={onClose}
+            />
           </div>
         </SheetContent>
       </Sheet>
@@ -239,7 +272,13 @@ export function PlacePanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <PlaceDetail place={place} utcOffsetMinutes={utcOffsetMinutes} />
+        <PlaceDetail
+              place={place}
+              places={places}
+              utcOffsetMinutes={utcOffsetMinutes}
+              canEdit={canEdit}
+              onClose={onClose}
+            />
       </div>
     </aside>
   );

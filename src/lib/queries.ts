@@ -166,6 +166,98 @@ function firstArrival(visits: readonly { arrivedAt: Date }[]): number {
   return visits[0]?.arrivedAt.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
+export interface ShowcasePhoto {
+  url: string;
+  width: number;
+  height: number;
+  blurhash: string | null;
+  photographerName: string | null;
+  photographerUrl: string | null;
+  placeName: string | null;
+}
+
+export interface Showcase {
+  name: string;
+  slug: string;
+  stats: TripStats;
+  /** A photograph from the trip, for the home page to lead with. */
+  hero: ShowcasePhoto | null;
+}
+
+/**
+ * The trip the home page advertises.
+ *
+ * The most recently created public one, which for now is the Rome demo. The
+ * hero photograph is picked from what that trip actually contains rather than
+ * being a separate asset — the point of the page is to show what the thing
+ * produces, so the picture at the top should be one of its own.
+ */
+export async function getShowcase(): Promise<Showcase | null> {
+  try {
+    return await loadShowcase();
+  } catch {
+    // The home page is mostly prose and can stand without a trip to point at.
+    // Failing the whole render because the database is unreachable — during a
+    // build on a machine with no `DATABASE_URL`, say — would be a poor trade.
+    return null;
+  }
+}
+
+async function loadShowcase(): Promise<Showcase | null> {
+  const trip = await prisma.trip.findFirst({
+    where: { isPublic: true },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, slug: true, utcOffsetMinutes: true },
+  });
+
+  if (!trip) return null;
+
+  const [stats, candidates] = await Promise.all([
+    getTripStats(trip.id, trip.utcOffsetMinutes),
+    prisma.photo.findMany({
+      where: { tripId: trip.id, visitId: { not: null } },
+      // Widest first, so the hero is a photograph that can carry a full-bleed
+      // backdrop rather than one that has to be stretched to fill it.
+      orderBy: [{ width: "desc" }, { id: "asc" }],
+      take: 60,
+      select: {
+        url: true,
+        width: true,
+        height: true,
+        blurhash: true,
+        photographerName: true,
+        photographerUrl: true,
+        visit: { select: { place: { select: { name: true } } } },
+      },
+    }),
+  ]);
+
+  // Landscape only. A portrait photograph behind a full-width hero has to be
+  // cropped so hard that whatever it was of is lost.
+  const chosen =
+    candidates.find((photo) => photo.width > photo.height * 1.3) ??
+    candidates[0] ??
+    null;
+
+  return {
+    name: trip.name,
+    slug: trip.slug,
+    stats,
+    hero:
+      chosen === null
+        ? null
+        : {
+            url: chosen.url,
+            width: chosen.width,
+            height: chosen.height,
+            blurhash: chosen.blurhash,
+            photographerName: chosen.photographerName,
+            photographerUrl: chosen.photographerUrl,
+            placeName: chosen.visit?.place.name ?? null,
+          },
+  };
+}
+
 /**
  * Headline numbers for the trip.
  *

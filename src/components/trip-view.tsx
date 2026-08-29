@@ -13,6 +13,8 @@ import type { TripDetail } from "@/lib/queries";
 interface TripViewProps {
   trip: TripDetail;
   days: readonly TimelineDay[];
+  /** Whether this deployment permits manual corrections. */
+  canEdit: boolean;
 }
 
 /**
@@ -25,7 +27,7 @@ interface TripViewProps {
  * moment: click a marker and the timeline row highlights, hover a row and the
  * marker grows, and nothing has to synchronise with anything.
  */
-export function TripView({ trip, days }: TripViewProps) {
+export function TripView({ trip, days, canEdit }: TripViewProps) {
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
 
@@ -79,7 +81,9 @@ export function TripView({ trip, days }: TripViewProps) {
           <PlacePanel
             place={selectedPlace}
             order={selectedOrder}
+            places={trip.places}
             utcOffsetMinutes={trip.utcOffsetMinutes}
+            canEdit={canEdit}
             onClose={handleClose}
           />
         </div>

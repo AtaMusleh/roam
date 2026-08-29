@@ -5,6 +5,7 @@ import { buildTimeline } from "@/components/timeline/build";
 import { TripStats } from "@/components/trip-stats";
 import { TripView } from "@/components/trip-view";
 import { formatTripDateRange, pluralise } from "@/lib/format";
+import { editsAllowed } from "@/lib/place-edits";
 import { getTripBySlug, getTripStats, photographedRange } from "@/lib/queries";
 
 export async function generateMetadata({
@@ -67,7 +68,9 @@ export default async function TripPage({ params }: PageProps<"/[slug]">) {
         </div>
       </header>
 
-      <TripView trip={trip} days={days} />
+      {/* `ALLOW_EDITS` is server-only, so whether editing is available has to be
+          decided here and handed down. */}
+      <TripView trip={trip} days={days} canEdit={editsAllowed()} />
     </div>
   );
 }

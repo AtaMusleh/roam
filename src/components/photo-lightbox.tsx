@@ -115,7 +115,20 @@ function Lightbox({
   const [viewport, setViewport] = useState<Viewport>({ width: 0, height: 0 });
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
 
-  const stageRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The frame the photograph is fitted into, held in state rather than a ref.
+   *
+   * A ref plus an effect with empty dependencies does not work here: Radix
+   * mounts a portal's children after the first commit, so the effect runs while
+   * `ref.current` is still null, bails out, and — having no dependencies —
+   * never runs again. The measurement stays at zero, no size is ever applied,
+   * and the photograph lays out at the frame's full width with its height
+   * following the aspect ratio, hanging off the bottom of the screen.
+   *
+   * A callback ref stored in state re-runs the effect the moment the node
+   * appears, whenever that happens to be.
+   */
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const pointer = useRef<{ id: number; x: number; y: number } | null>(null);
   /** Holds preloaded images so the browser does not discard them immediately. */
   const preloaded = useRef<HTMLImageElement[]>([]);
@@ -136,9 +149,12 @@ function Lightbox({
   );
 
   // --- the space available for the photograph ------------------------------
+  //
+  // The frame is absolutely positioned, so its size comes from its insets
+  // alone. Measuring anything the photograph sits inside of would let the
+  // photograph influence the number it is being sized by.
 
   useEffect(() => {
-    const stage = stageRef.current;
     if (!stage) return;
 
     const measure = (): void => {
@@ -153,7 +169,7 @@ function Lightbox({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [stage]);
 
   // --- keyboard -------------------------------------------------------------
   //
@@ -288,11 +304,16 @@ function Lightbox({
             className="absolute inset-0 cursor-default"
           />
 
-          <header className="pointer-events-none relative z-10 flex items-center justify-between gap-4 p-3">
+          {/*
+            Header and footer sit above the stage. They come before and after it
+            in the flow, so at an equal z-index the photograph paints over the
+            header — which is what was clipping the counter behind the image.
+          */}
+          <header className="pointer-events-none relative z-20 flex items-center justify-between gap-4 p-4">
             <p
               aria-live="polite"
               aria-atomic="true"
-              className="rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium tabular-nums text-white/90"
+              className="relative z-20 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium tabular-nums text-white/90"
             >
               <span className="sr-only">Photo </span>
               {index + 1} of {photos.length}
@@ -313,8 +334,7 @@ function Lightbox({
           </header>
 
           <div
-            ref={stageRef}
-            className="pointer-events-none relative z-10 min-h-0 flex-1 px-2 sm:px-16"
+            className="pointer-events-none relative z-10 min-h-0 flex-1"
             onPointerDown={(event) => {
               // Mouse drags are left alone: on a desktop a press-and-move is
               // more likely a selection attempt than a swipe, and the click
@@ -348,12 +368,37 @@ function Lightbox({
             }}
             style={{ touchAction: "none" }}
           >
-            <div className="flex h-full w-full items-center justify-center">
+            {/*
+              Absolutely positioned, and it is the element that gets measured.
+              Both matter.
+
+              Measuring the stage instead let the photograph feed back into its
+              own measurement: an oversized figure influenced the box it was
+              being sized against, and the height settled on a value taken from
+              a moment when the stage was taller than it ended up. A portrait
+              photograph came out 1968px tall in a 780px stage, hanging past the
+              bottom of the screen and over the credit.
+
+              With the frame taken out of flow, its size comes only from these
+              insets — which is to say from the viewport, the header and the
+              footer — and nothing inside it can change that. The insets also
+              replace the stage's old horizontal padding, so the measured box is
+              the space actually available rather than that space plus padding.
+            */}
+            <div
+              ref={setStage}
+              className="absolute inset-y-0 left-2 right-2 flex items-center justify-center sm:left-16 sm:right-16"
+            >
               <figure
                 className="pointer-events-auto relative"
                 style={{
                   width: size?.width,
                   height: size?.height,
+                  // A belt to the measurement's braces. If a size is ever missing
+                  // again, the photograph is still confined to its frame
+                  // instead of running off the screen.
+                  maxWidth: "100%",
+                  maxHeight: "100%",
                   transform:
                     drag === null
                       ? undefined
@@ -429,7 +474,7 @@ function Lightbox({
             )}
           </div>
 
-          <footer className="pointer-events-none relative z-10 p-3 text-center">
+          <footer className="pointer-events-none relative z-20 p-4 text-center">
             {photo.photographerName !== null && (
               <p className="pointer-events-auto inline-block rounded-full bg-black/50 px-3 py-1.5 text-xs text-white/80">
                 Photo by{" "}
