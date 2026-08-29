@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   reactCompiler: true,
+  images: {
+    remotePatterns: [
+      // Cloudinary, once real uploads exist.
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      // picsum.photos backs the --placeholder seed, and redirects to its CDN.
+      { protocol: "https", hostname: "picsum.photos" },
+      { protocol: "https", hostname: "fastly.picsum.photos" },
+    ],
+  },
 };
 
 export default nextConfig;

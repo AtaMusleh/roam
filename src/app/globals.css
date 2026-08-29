@@ -39,6 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-roam-accent: var(--roam-accent);
+  --color-roam-accent-foreground: var(--roam-accent-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -73,6 +75,12 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+
+  /* Roam accent. Warm against the cool greys of the dark map style, and
+     against photographs. Kept as a hex because Mapbox paint properties need a
+     colour string it can parse; ROAM_ACCENT in src/lib/theme.ts must match. */
+  --roam-accent: #f0a044;
+  --roam-accent-foreground: oklch(0.2 0.03 60);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -85,6 +93,8 @@
 
 .dark {
   --background: oklch(0.145 0 0);
+  --roam-accent: #f0a044;
+  --roam-accent-foreground: oklch(0.2 0.03 60);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -127,4 +137,55 @@
   html {
     @apply font-sans;
   }
+}
+/*
+  Map markers.
+  
+  Created imperatively by Mapbox (see src/components/map/trip-map.tsx), so they
+  sit outside React's tree and outside Tailwind's class scanning. Their state
+  arrives as data attributes the effects there write, which keeps the styling
+  declarative even though the elements are not.
+*/
+.roam-marker {
+  --marker-size: 36px;
+
+  display: grid;
+  place-items: center;
+  width: var(--marker-size);
+  height: var(--marker-size);
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in oklab, var(--roam-accent) 70%, transparent);
+  background: color-mix(in oklab, var(--roam-accent) 88%, transparent);
+  color: var(--roam-accent-foreground);
+  font-family: var(--font-sans);
+  font-size: calc(var(--marker-size) * 0.36);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 12px oklch(0 0 0 / 45%);
+  transition:
+    transform 150ms ease-out,
+    opacity 150ms ease-out;
+}
+
+.roam-marker[data-hovered="true"] {
+  transform: scale(1.12);
+}
+
+/* The selected place should read as the subject of the screen. */
+.roam-marker[data-selected="true"] {
+  transform: scale(1.35);
+  border-color: var(--roam-accent-foreground);
+  box-shadow: 0 4px 20px oklch(0 0 0 / 60%);
+  z-index: 2;
+}
+
+/* ...and everything else should recede, without disappearing. */
+.roam-marker[data-dimmed="true"] {
+  opacity: 0.35;
+}
+
+.roam-marker[data-dimmed="true"][data-hovered="true"] {
+  opacity: 0.7;
 }
