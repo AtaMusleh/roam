@@ -37,11 +37,48 @@ export interface PipelinePhoto {
   lng: number | null;
 }
 
+/**
+ * Default DBSCAN radius, in metres.
+ *
+ * Chosen from the sweep in `scripts/evaluate-clustering.ts` over the Rome
+ * dataset, which measures a genuine conflict rather than a tuning plateau:
+ *
+ *  - **Below 50m** the wide-spread sites shed their outer photos to noise.
+ *    Foro Romano (σ=60m) and Palatino (σ=55m) are hectares of ruins, not
+ *    points, and at ε=40m their recall falls to 67% and 43%.
+ *  - **At 60m and above** the Pantheon and Sant'Eustachio — 100m apart, a
+ *    basilica and the café on the next piazza — merge into a single place.
+ *
+ * The two constraints do not overlap. ε must exceed the spread of the widest
+ * place and fall short of the gap to the nearest neighbouring place, and on
+ * this trip the widest spread is larger than the smallest gap. No global ε
+ * satisfies both, so the choice is which error to prefer.
+ *
+ * 60m prefers the merge. Losing more than half of Palatino's photos to noise
+ * leaves a place looking sparse and empty with no obvious cause, whereas two
+ * places fused into one is visible at a glance and the traveller can split it
+ * by hand. An error the user can see and fix beats one they cannot.
+ *
+ * A variable-density algorithm (OPTICS, HDBSCAN) picks a local ε per cluster
+ * and would dissolve the conflict outright. That is the real fix if manual
+ * splitting proves tiresome.
+ */
+export const DEFAULT_EPSILON_METERS = 60;
+
+/**
+ * Default DBSCAN core-point threshold, counting the point itself.
+ *
+ * 4 is the lowest value that keeps a couple of stray photos on a street corner
+ * from becoming a "place". Raising it to 5 costs recall at the thinly
+ * photographed stops without buying any extra separation.
+ */
+export const DEFAULT_MIN_POINTS = 4;
+
 export interface PipelineOptions {
-  /** DBSCAN neighbourhood radius, in metres. */
-  epsilonMeters: number;
-  /** DBSCAN core-point threshold, counting the point itself. */
-  minPoints: number;
+  /** DBSCAN neighbourhood radius, in metres. Defaults to 60m. */
+  epsilonMeters?: number;
+  /** DBSCAN core-point threshold, counting the point itself. Defaults to 4. */
+  minPoints?: number;
   /** Gap that separates two visits to one place. Defaults to 90 minutes. */
   visitGapMinutes?: number;
   /** Widest anchor gap that still permits interpolation. Defaults to 2 hours. */
@@ -150,11 +187,11 @@ function nearestClusterWithinEpsilon(
 
 export function runPipeline(
   photos: readonly PipelinePhoto[],
-  options: PipelineOptions,
+  options: PipelineOptions = {},
 ): PipelineResult {
   const {
-    epsilonMeters,
-    minPoints,
+    epsilonMeters = DEFAULT_EPSILON_METERS,
+    minPoints = DEFAULT_MIN_POINTS,
     visitGapMinutes = DEFAULT_VISIT_GAP_MINUTES,
     maxInterpolationGapMinutes = DEFAULT_MAX_INTERPOLATION_GAP_MINUTES,
   } = options;

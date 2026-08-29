@@ -99,3 +99,25 @@ model Photo {
 
   @@index([tripId, takenAt])
 }
+
+/// Reverse-geocoding results, cached by coordinate.
+///
+/// Nominatim is a free public service that allows one request per second, so
+/// the same coordinate must never be looked up twice. Coordinates are rounded
+/// to four decimal places before use — about 11m at the equator, comfortably
+/// inside a single place — which turns a continuous position into a cache key
+/// that repeated clusterings of the same trip will hit.
+model GeocodeCache {
+  id String @id @default(cuid())
+
+  /// Rounded to 4 decimal places. Rounding is deterministic for a given input,
+  /// so float equality is safe here in a way it generally is not.
+  roundedLat Float
+  roundedLng Float
+
+  name      String
+  address   String?
+  fetchedAt DateTime @default(now())
+
+  @@unique([roundedLat, roundedLng])
+}

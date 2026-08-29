@@ -9,18 +9,43 @@
  * The statements below are the DDL that `db push` would have emitted for the
  * current schema, applied through the same `pg` driver the app uses.
  *
- * It is a stopgap, not a migration tool: it creates the schema from empty and
- * does nothing else. Once the schema engine can run (allow-list the binary, or
+ * Every statement is idempotent, so re-running after adding a model creates
+ * only what is missing. It is still a stopgap, not a migration tool: it adds,
+ * and never alters or drops. A column whose type changed in the schema will
+ * not change here. Once the schema engine can run (allow-list the binary, or
  * push from CI or WSL), delete this file and use `prisma db push` and
  * `prisma migrate` as normal.
  */
 
 import { Client } from "pg";
 
-const STATEMENTS: readonly string[] = [
-  `CREATE TYPE "GpsSource" AS ENUM ('EXIF', 'INTERPOLATED', 'MANUAL', 'NONE')`,
+/** Adds a foreign key only if a constraint of that name is not already there. */
+function foreignKey(
+  table: string,
+  constraint: string,
+  column: string,
+  references: string,
+  onDelete: "CASCADE" | "SET NULL",
+): string {
+  return `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = '${constraint}'
+      ) THEN
+        ALTER TABLE "${table}"
+          ADD CONSTRAINT "${constraint}" FOREIGN KEY ("${column}")
+          REFERENCES "${references}"("id") ON DELETE ${onDelete} ON UPDATE CASCADE;
+      END IF;
+    END $$`;
+}
 
-  `CREATE TABLE "Trip" (
+const STATEMENTS: readonly string[] = [
+  `DO $$ BEGIN
+     CREATE TYPE "GpsSource" AS ENUM ('EXIF', 'INTERPOLATED', 'MANUAL', 'NONE');
+   EXCEPTION WHEN duplicate_object THEN NULL;
+   END $$`,
+
+  `CREATE TABLE IF NOT EXISTS "Trip" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "startDate" TIMESTAMP(3) NOT NULL,
@@ -32,7 +57,7 @@ const STATEMENTS: readonly string[] = [
     CONSTRAINT "Trip_pkey" PRIMARY KEY ("id")
   )`,
 
-  `CREATE TABLE "Place" (
+  `CREATE TABLE IF NOT EXISTS "Place" (
     "id" TEXT NOT NULL,
     "tripId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -44,7 +69,7 @@ const STATEMENTS: readonly string[] = [
     CONSTRAINT "Place_pkey" PRIMARY KEY ("id")
   )`,
 
-  `CREATE TABLE "Visit" (
+  `CREATE TABLE IF NOT EXISTS "Visit" (
     "id" TEXT NOT NULL,
     "placeId" TEXT NOT NULL,
     "arrivedAt" TIMESTAMP(3) NOT NULL,
@@ -53,7 +78,7 @@ const STATEMENTS: readonly string[] = [
     CONSTRAINT "Visit_pkey" PRIMARY KEY ("id")
   )`,
 
-  `CREATE TABLE "Photo" (
+  `CREATE TABLE IF NOT EXISTS "Photo" (
     "id" TEXT NOT NULL,
     "tripId" TEXT NOT NULL,
     "visitId" TEXT,
@@ -70,26 +95,27 @@ const STATEMENTS: readonly string[] = [
     CONSTRAINT "Photo_pkey" PRIMARY KEY ("id")
   )`,
 
-  `CREATE UNIQUE INDEX "Trip_slug_key" ON "Trip"("slug")`,
-  `CREATE INDEX "Place_tripId_idx" ON "Place"("tripId")`,
-  `CREATE INDEX "Visit_placeId_arrivedAt_idx" ON "Visit"("placeId", "arrivedAt")`,
-  `CREATE INDEX "Photo_tripId_takenAt_idx" ON "Photo"("tripId", "takenAt")`,
+  `CREATE TABLE IF NOT EXISTS "GeocodeCache" (
+    "id" TEXT NOT NULL,
+    "roundedLat" DOUBLE PRECISION NOT NULL,
+    "roundedLng" DOUBLE PRECISION NOT NULL,
+    "name" TEXT NOT NULL,
+    "address" TEXT,
+    "fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "GeocodeCache_pkey" PRIMARY KEY ("id")
+  )`,
 
-  `ALTER TABLE "Place"
-     ADD CONSTRAINT "Place_tripId_fkey" FOREIGN KEY ("tripId")
-     REFERENCES "Trip"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "Trip_slug_key" ON "Trip"("slug")`,
+  `CREATE INDEX IF NOT EXISTS "Place_tripId_idx" ON "Place"("tripId")`,
+  `CREATE INDEX IF NOT EXISTS "Visit_placeId_arrivedAt_idx" ON "Visit"("placeId", "arrivedAt")`,
+  `CREATE INDEX IF NOT EXISTS "Photo_tripId_takenAt_idx" ON "Photo"("tripId", "takenAt")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "GeocodeCache_roundedLat_roundedLng_key"
+     ON "GeocodeCache"("roundedLat", "roundedLng")`,
 
-  `ALTER TABLE "Visit"
-     ADD CONSTRAINT "Visit_placeId_fkey" FOREIGN KEY ("placeId")
-     REFERENCES "Place"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
-
-  `ALTER TABLE "Photo"
-     ADD CONSTRAINT "Photo_tripId_fkey" FOREIGN KEY ("tripId")
-     REFERENCES "Trip"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
-
-  `ALTER TABLE "Photo"
-     ADD CONSTRAINT "Photo_visitId_fkey" FOREIGN KEY ("visitId")
-     REFERENCES "Visit"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+  foreignKey("Place", "Place_tripId_fkey", "tripId", "Trip", "CASCADE"),
+  foreignKey("Visit", "Visit_placeId_fkey", "placeId", "Place", "CASCADE"),
+  foreignKey("Photo", "Photo_tripId_fkey", "tripId", "Trip", "CASCADE"),
+  foreignKey("Photo", "Photo_visitId_fkey", "visitId", "Visit", "SET NULL"),
 ];
 
 async function main(): Promise<void> {
@@ -112,8 +138,14 @@ async function main(): Promise<void> {
     }
     await client.query("COMMIT");
 
+    const { rows } = await client.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' ORDER BY table_name`,
+    );
+
     process.stdout.write(
-      `Applied ${STATEMENTS.length} statements to the database.\n`,
+      `Applied ${STATEMENTS.length} statements.\n` +
+        `Tables: ${rows.map((row) => row.table_name).join(", ")}\n`,
     );
   } catch (error) {
     await client.query("ROLLBACK");
