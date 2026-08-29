@@ -12,7 +12,7 @@
     "db:push": "prisma db push",
     "generate:trip": "tsx scripts/generate-trip.ts",
     "evaluate:clustering": "tsx scripts/evaluate-clustering.ts",
-    "postinstall": "prisma skills sync || exit 0"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
