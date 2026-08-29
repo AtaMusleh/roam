@@ -1,0 +1,101 @@
+// Roam — travel photo journey data model.
+//
+// A Trip owns Photos and Places. A Place is a geographic location the traveller
+// stopped at; a Visit is one bounded stay at that Place, so the same café on
+// Monday and Thursday is one Place with two Visits. Photos are attached to the
+// Trip on import and to a Visit later, once clustering has decided where and
+// when they were taken.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 no longer accepts a `url` here. The CLI reads the connection string
+// from prisma.config.ts; the app hands PrismaClient a driver adapter instead
+// (see src/lib/prisma.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+/// Where a photo's coordinates came from. EXIF is what the camera recorded;
+/// INTERPOLATED is inferred from neighbouring photos in time; MANUAL is a
+/// correction made by the traveller; NONE means the photo has no position.
+enum GpsSource {
+  EXIF
+  INTERPOLATED
+  MANUAL
+  NONE
+}
+
+model Trip {
+  id           String   @id @default(cuid())
+  name         String
+  startDate    DateTime
+  endDate      DateTime
+  /// Photo.id of the trip's cover image. Deliberately not a relation: it would
+  /// create a cycle with Photo.tripId and force a nullable two-step insert.
+  coverPhotoId String?
+  slug         String   @unique
+  isPublic     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  photos Photo[]
+  places Place[]
+}
+
+model Place {
+  id     String @id @default(cuid())
+  tripId String
+  name   String
+  lat    Float
+  lng    Float
+
+  address String?
+  /// Denormalised count of photos across all of this place's visits.
+  photoCount Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  trip   Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  visits Visit[]
+
+  @@index([tripId])
+}
+
+model Visit {
+  id         String   @id @default(cuid())
+  placeId    String
+  arrivedAt  DateTime
+  departedAt DateTime
+  /// Position of this visit in the trip's chronological order, starting at 0.
+  sequence Int
+
+  place  Place   @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  photos Photo[]
+
+  @@index([placeId, arrivedAt])
+}
+
+model Photo {
+  id     String  @id @default(cuid())
+  tripId String
+  /// Null until clustering assigns the photo to a visit, and set back to null
+  /// if that visit is later removed.
+  visitId String?
+
+  cloudinaryId String
+  url          String
+  width        Int
+  height       Int
+  blurhash     String?
+
+  takenAt   DateTime?
+  lat       Float?
+  lng       Float?
+  gpsSource GpsSource @default(NONE)
+  createdAt DateTime  @default(now())
+
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  visit Visit? @relation(fields: [visitId], references: [id], onDelete: SetNull)
+
+  @@index([tripId, takenAt])
+}
