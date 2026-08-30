@@ -1,0 +1,34 @@
+warning: in the working copy of 'src/lib/rate-limit.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/site.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/lib/rate-limit.ts b/src/lib/rate-limit.ts[m
+[1mindex f2a2107..82ef213 100644[m
+[1m--- a/src/lib/rate-limit.ts[m
+[1m+++ b/src/lib/rate-limit.ts[m
+[36m@@ -20,7 +20,7 @@[m [mexport function userAgent(): string {[m
+ [m
+   return contact[m
+     ? `Roam/0.1 (travel photo journey app; ${contact})`[m
+[31m-    : "Roam/0.1 (travel photo journey app; https://github.com/roam-app/roam)";[m
+[32m+[m[32m    : "Roam/0.1 (travel photo journey app; https://github.com/AtaMusleh/roam)";[m
+ }[m
+ [m
+ export interface RateLimiter {[m
+[1mdiff --git a/src/lib/site.ts b/src/lib/site.ts[m
+[1mindex fa10945..11c712b 100644[m
+[1m--- a/src/lib/site.ts[m
+[1m+++ b/src/lib/site.ts[m
+[36m@@ -5,11 +5,11 @@[m
+ /**[m
+  * Where the source lives.[m
+  *[m
+[31m- * A placeholder until the repository has a home — set `NEXT_PUBLIC_GITHUB_URL`[m
+[31m- * to the real one and the footer follows.[m
+[32m+[m[32m * Overridable with `NEXT_PUBLIC_GITHUB_URL`, so a fork's footer can point at[m
+[32m+[m[32m * the fork rather than back here.[m
+  */[m
+ export const GITHUB_URL =[m
+[31m-  process.env.NEXT_PUBLIC_GITHUB_URL?.trim() || "https://github.com/roam-app/roam";[m
+[32m+[m[32m  process.env.NEXT_PUBLIC_GITHUB_URL?.trim() || "https://github.com/AtaMusleh/roam";[m
+ [m
+ /** OpenStreetMap's attribution, required by the ODbL for data derived from it. */[m
+ export const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";[m

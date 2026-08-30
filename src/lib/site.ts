@@ -5,11 +5,11 @@
 /**
  * Where the source lives.
  *
- * A placeholder until the repository has a home — set `NEXT_PUBLIC_GITHUB_URL`
- * to the real one and the footer follows.
+ * Overridable with `NEXT_PUBLIC_GITHUB_URL`, so a fork's footer can point at
+ * the fork rather than back here.
  */
 export const GITHUB_URL =
-  process.env.NEXT_PUBLIC_GITHUB_URL?.trim() || "https://github.com/roam-app/roam";
+  process.env.NEXT_PUBLIC_GITHUB_URL?.trim() || "https://github.com/AtaMusleh/roam";
 
 /** OpenStreetMap's attribution, required by the ODbL for data derived from it. */
 export const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";

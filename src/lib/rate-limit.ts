@@ -20,7 +20,7 @@ export function userAgent(): string {
 
   return contact
     ? `Roam/0.1 (travel photo journey app; ${contact})`
-    : "Roam/0.1 (travel photo journey app; https://github.com/roam-app/roam)";
+    : "Roam/0.1 (travel photo journey app; https://github.com/AtaMusleh/roam)";
 }
 
 export interface RateLimiter {
