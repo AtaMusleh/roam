@@ -63,7 +63,9 @@ from the nearest place it does have some for.
 | --- | --- | --- |
 | `DATABASE_URL` | everything | PostgreSQL. Prisma 7 talks to it through the `pg` driver adapter. |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | the map | Free tier is plenty. Without it the trip page renders the timeline and explains what is missing. |
-| `ALLOW_EDITS` | manual place corrections | Must be exactly `true`. See below. |
+| `ADMIN_PASSWORD` | signing in at `/admin` | The owner's password. Until it is set there is no way to sign in, and the whole site is read-only. |
+| `SESSION_SECRET` | signing the session cookie | At least 32 characters, and secret. `openssl rand -base64 24`. Changing it signs every outstanding session out. |
+| `ALLOW_EDITS` | local development only | Exactly `true` unlocks editing with no password. Ignored when `NODE_ENV=production`. See below. |
 | `UNSPLASH_ACCESS_KEY` | rebuilding the demo photography | Only needed to regenerate the `data/unsplash-<city>.json` caches, which are committed. |
 | `NOMINATIM_CONTACT` | politeness | Goes in the User-Agent sent to Nominatim and Overpass so an operator can reach you rather than block you. |
 | `OVERPASS_ENDPOINT` | optional | Point at a mirror or your own instance; defaults to the public one. |
@@ -79,15 +81,52 @@ hand — renamed, merged, split at a chosen visit, or deleted with their
 photographs returning to the trip unassigned.
 
 The controls appear in the place panel, and the routes behind them
-(`/api/places/[id]`, `.../merge`, `.../split`) all refuse with a 403 unless:
+(`/api/places/[id]`, `.../merge`, `.../split`) all refuse with a 403 unless the
+owner is signed in. Every edit recomputes the affected place's centroid and
+photo count and renumbers the trip's visit sequences.
+
+## Signing in
+
+Roam has one writer and any number of readers, so it has one password rather
+than an accounts system. Set both:
 
 ```
-ALLOW_EDITS=true
+ADMIN_PASSWORD=whatever-you-like
+SESSION_SECRET=$(openssl rand -base64 24)
 ```
 
-It is off by default so a public deployment stays read-only — forgetting to set
-it fails closed rather than open. Every edit recomputes the affected place's
-centroid and photo count and renumbers the trip's visit sequences.
+Then sign in at `/admin`. A correct password sets a signed `httpOnly` cookie
+good for thirty days; five wrong ones in fifteen minutes locks that address out,
+and the error is the same sentence either way. The cookie carries its own expiry
+and an HMAC over it, so it cannot be forged or extended — but it also cannot be
+revoked before it expires, since nothing about it is stored server-side.
+Rotating `SESSION_SECRET` is how you sign every browser out at once.
+
+Every mutation verifies the cookie on the server. The place panel hiding its
+controls for a signed-out visitor is a courtesy; the 403 is the enforcement.
+
+With no `ADMIN_PASSWORD` set, nobody can sign in and the deployment is simply
+read-only — which is the right behaviour for a public demo, not a fault.
+
+`ALLOW_EDITS=true` unlocks editing with no password so the verification scripts
+do not need one. It only works when `NODE_ENV` is not `production`: an
+all-or-nothing switch is exactly what the password replaces, and leaving it live
+in production would reopen the door it closed. It unlocks *editing* only —
+`/upload` still wants a real session.
+
+## Importing photographs
+
+`/upload` is **designed but not implemented.** Signed in, it gives you a
+drag-and-drop zone, a file list with thumbnails and sizes read in the browser,
+and a trip to import into — and then the import button reports that there is no
+pipeline behind it. Nothing is uploaded and no trip is changed.
+
+It exists because the interface was worth settling before the four steps behind
+it were written: read EXIF coordinates and timestamps in the browser, resize
+before upload, store on Cloudinary, then run the same `ingestTrip` clustering
+the demo trips went through. The page says all of this on itself, at the top and
+beside the button, so nobody can spend ten minutes selecting photographs before
+finding out. Trips are still created by `npm run seed:all`.
 
 ## Scripts
 

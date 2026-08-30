@@ -2,7 +2,7 @@
  * PATCH  /api/places/[id]   — rename
  * DELETE /api/places/[id]   — remove, returning its photographs to unassigned
  *
- * Both are gated on `ALLOW_EDITS`, like every other mutation. See
+ * Both are gated on the owner session, like every other mutation. See
  * `src/lib/place-edits.ts` for why these operations exist at all.
  */
 
@@ -21,7 +21,7 @@ export async function PATCH(
   request: NextRequest,
   context: RouteContext<"/api/places/[id]">,
 ): Promise<NextResponse> {
-  const refused = editGuard();
+  const refused = await editGuard();
   if (refused) return refused;
 
   const { id } = await context.params;
@@ -49,7 +49,7 @@ export async function DELETE(
   _request: NextRequest,
   context: RouteContext<"/api/places/[id]">,
 ): Promise<NextResponse> {
-  const refused = editGuard();
+  const refused = await editGuard();
   if (refused) return refused;
 
   const { id } = await context.params;

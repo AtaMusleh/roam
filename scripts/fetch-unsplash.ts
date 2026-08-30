@@ -210,6 +210,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${text}\n`);
   };
 
+  const startedWith = Object.keys(buckets).length;
   const already = Object.keys(buckets).filter((key) => counts.has(key)).length;
 
   out(
@@ -321,6 +322,24 @@ async function main(): Promise<void> {
             : "; the seed will repeat photographs to fill in"),
       );
     }
+  }
+
+  // Nothing new: leave the file alone. Rewriting it would move `generatedAt`
+  // and show up as a change to a committed file, which is a misleading diff for
+  // a run that fetched nothing — and a retry loop waiting out the hourly budget
+  // does exactly that, over and over.
+  const fetched = Object.keys(buckets).length - startedWith;
+
+  if (fetched === 0 && existsSync(outPath)) {
+    out();
+    out(`No new buckets. ${outPath} left unchanged.`);
+
+    const missing = [...counts.keys()].filter((key) => !(key in buckets));
+    if (missing.length > 0) {
+      out(`  ${String(missing.length)} still unfetched: ${missing.join(", ")}`);
+    }
+
+    return;
   }
 
   const cache: UnsplashCache = {

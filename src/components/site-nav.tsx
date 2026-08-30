@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Upload } from "lucide-react";
 
 import { SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,14 @@ interface SiteNavProps {
    * itself, where the wordmark alone is enough.
    */
   back?: { href: string; label: string };
+  /**
+   * Whether the owner is signed in, decided by the page that renders this.
+   *
+   * Passed in rather than read here so the decision to become dynamic — which
+   * reading a cookie forces — belongs to each route rather than being imposed
+   * on every route that happens to want a navigation bar.
+   */
+  signedIn?: boolean;
   className?: string;
 }
 
@@ -25,7 +33,7 @@ interface SiteNavProps {
  * Deliberately quiet. The photographs are the point of these screens, and a
  * navigation bar competing with them would be the wrong trade.
  */
-export function SiteNav({ back, className }: SiteNavProps) {
+export function SiteNav({ back, signedIn = false, className }: SiteNavProps) {
   return (
     <nav
       aria-label="Site"
@@ -58,6 +66,18 @@ export function SiteNav({ back, className }: SiteNavProps) {
             {back.label}
           </Link>
         </>
+      )}
+
+      {/* Only for the owner. Everyone else has nothing to import to, so the
+          link would be a door with no handle. */}
+      {signedIn && (
+        <Link
+          href="/upload"
+          className="ml-auto inline-flex items-center gap-1.5 rounded text-sm text-muted-foreground transition-colors hover:text-roam-accent focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
+        >
+          <Upload aria-hidden className="size-4" />
+          Upload
+        </Link>
       )}
     </nav>
   );

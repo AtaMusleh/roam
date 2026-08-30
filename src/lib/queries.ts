@@ -411,6 +411,27 @@ export async function getTripsIndex(): Promise<TripSummary[]> {
   );
 }
 
+/** A trip reduced to what a `<select>` needs. */
+export interface TripOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
+ * Every trip, for choosing which one an import belongs to.
+ *
+ * Private trips are included: this is only ever rendered behind the owner
+ * session, and the owner's own unpublished trip is exactly the sort of thing
+ * they would be adding photographs to.
+ */
+export async function getTripOptions(): Promise<TripOption[]> {
+  return prisma.trip.findMany({
+    orderBy: [{ startDate: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, slug: true },
+  });
+}
+
 /**
  * The widest landscape photograph belonging to a place.
  *

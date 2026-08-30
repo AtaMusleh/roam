@@ -25,15 +25,13 @@ import { centroid } from "./geo";
 import { prisma } from "./prisma";
 
 /**
- * Whether the deployment permits changes.
+ * Who may run these is decided in `src/lib/auth.ts`, not here.
  *
- * The demo is public and read-only; editing is for running it locally against
- * your own trips. Off unless explicitly switched on, so forgetting to set it
- * fails closed.
+ * This module is the operations themselves and nothing else: given that a
+ * change is permitted, what does it do to the data. Keeping the policy out of
+ * it means the two can be read and changed independently — and it means this
+ * file has no dependency on the request, so it stays usable from a script.
  */
-export function editsAllowed(): boolean {
-  return process.env.ALLOW_EDITS === "true";
-}
 
 export class PlaceEditError extends Error {
   constructor(

@@ -8,23 +8,26 @@
 
 import { NextResponse } from "next/server";
 
-import { editsAllowed, PlaceEditError } from "@/lib/place-edits";
+import { canEdit } from "@/lib/auth";
+import { PlaceEditError } from "@/lib/place-edits";
 import { prisma } from "@/lib/prisma";
 
 /**
- * Returns a 403 response when editing is disabled, or `null` to carry on.
+ * Returns a 403 response when the caller may not edit, or `null` to carry on.
  *
- * Every mutating handler calls this first. The public demo runs without
- * `ALLOW_EDITS`, so anyone who finds these endpoints gets a flat refusal
- * rather than a way to rearrange the trip everyone else is looking at.
+ * Every mutating handler calls this first, and it is the only place that
+ * decides. The session cookie is verified here on the server on every request
+ * — the panel hiding its controls for a signed-out visitor is a courtesy, not
+ * the enforcement, and anyone who finds these endpoints directly gets the same
+ * flat refusal.
  */
-export function editGuard(): NextResponse | null {
-  if (editsAllowed()) return null;
+export async function editGuard(): Promise<NextResponse | null> {
+  if (await canEdit()) return null;
 
   return NextResponse.json(
     {
-      error: "Editing is disabled on this deployment",
-      hint: "Set ALLOW_EDITS=true to enable it locally.",
+      error: "Editing requires the owner to be signed in",
+      hint: "Sign in at /admin.",
     },
     { status: 403 },
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { BlurhashCanvas } from "@/components/blurhash-canvas";
 import { SiteNav } from "@/components/site-nav";
+import { isSignedIn } from "@/lib/auth";
 import { formatTripDateRange } from "@/lib/format";
 import { getTripsIndex } from "@/lib/queries";
 import type { TripSummary } from "@/lib/queries";
@@ -17,11 +18,16 @@ export const metadata: Metadata = {
 };
 
 /**
- * Live data, but not so live it should be recomputed per request. Matches the
- * home page: an hour is generous for an index that changes when someone
- * reseeds or renames a place.
+ * Rendered per request rather than cached.
+ *
+ * It used to revalidate hourly, which was right when the page was the same for
+ * everyone. The nav now shows an upload link to whoever is signed in, and
+ * reading the session cookie to decide that opts the whole route into dynamic
+ * rendering — a cached document cannot vary by cookie. Serving a stale nav to
+ * the owner, or the owner's nav to everyone, would both be worse than the
+ * eleven queries this costs.
  */
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 /**
  * Widths the cover images are requested at.
@@ -34,13 +40,13 @@ const LEAD_COVER_WIDTH = 1600;
 const COVER_WIDTH = 900;
 
 export default async function TripsPage() {
-  const trips = await getTripsIndex();
+  const [trips, signedIn] = await Promise.all([getTripsIndex(), isSignedIn()]);
 
   return (
     // `dark` scoped here, as on the home and trip pages, so the three agree
     // without depending on a document-level theme.
     <div className="dark flex min-h-dvh flex-col bg-background text-foreground">
-      <SiteNav />
+      <SiteNav signedIn={signedIn} />
 
       <header className="border-b border-border/60 px-6 py-12 sm:py-16">
         <div className="mx-auto w-full max-w-6xl">

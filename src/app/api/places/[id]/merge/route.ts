@@ -20,7 +20,7 @@ export async function POST(
   request: NextRequest,
   context: RouteContext<"/api/places/[id]/merge">,
 ): Promise<NextResponse> {
-  const refused = editGuard();
+  const refused = await editGuard();
   if (refused) return refused;
 
   const { id } = await context.params;
