@@ -203,6 +203,21 @@ export async function startSession(): Promise<void> {
   });
 }
 
+/**
+ * When the current session stops working, or null if there is not one.
+ *
+ * Read back out of the token rather than tracked separately — the expiry is
+ * already in there and already signed, so this is the same fact the server will
+ * check, not a second copy of it that could drift.
+ */
+export async function sessionExpiresAt(): Promise<Date | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (token === undefined || !verifyToken(token)) return null;
+
+  const expiresAt = Number(token.split(".")[1]);
+  return Number.isFinite(expiresAt) ? new Date(expiresAt) : null;
+}
+
 /** Ends the session in this browser. See the note above on revocation. */
 export async function endSession(): Promise<void> {
   (await cookies()).delete(SESSION_COOKIE);

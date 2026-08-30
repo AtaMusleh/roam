@@ -106,7 +106,15 @@ export async function signIn(
   redirect("/admin");
 }
 
+/**
+ * Clears the session cookie and returns the reader to the home page.
+ *
+ * Home rather than back to /admin: sign-out is now reachable from the nav on
+ * every page, so the person doing it is usually not on /admin and has no
+ * reason to end up there. Landing on the sign-in form after signing out reads
+ * as an invitation to sign straight back in.
+ */
 export async function signOut(): Promise<void> {
   await endSession();
-  redirect("/admin");
+  redirect("/");
 }

@@ -5,7 +5,12 @@ import { ArrowRight, KeyRound, ShieldCheck, TriangleAlert, Upload } from "lucide
 import { SiteNav } from "@/components/site-nav";
 import { Button } from "@/components/ui/button";
 import { SIGN_IN_ATTEMPT_LIMIT, SIGN_IN_WINDOW_MS } from "@/lib/attempt-limit";
-import { adminConfig, editsForcedOpen, isSignedIn } from "@/lib/auth";
+import {
+  adminConfig,
+  editsForcedOpen,
+  isSignedIn,
+  sessionExpiresAt,
+} from "@/lib/auth";
 import { SITE_NAME } from "@/lib/site";
 import { signOut } from "./actions";
 import { SignInForm } from "./sign-in-form";
@@ -22,6 +27,7 @@ const WINDOW_MINUTES = Math.round(SIGN_IN_WINDOW_MS / 60000);
 
 export default async function AdminPage() {
   const signedIn = await isSignedIn();
+  const expiresAt = await sessionExpiresAt();
   const config = adminConfig();
   const devOverride = editsForcedOpen();
 
@@ -31,7 +37,11 @@ export default async function AdminPage() {
 
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
         <div className="rounded-lg border border-border/60 bg-card p-6 sm:p-8">
-          {signedIn ? <SignedIn /> : <SignedOut problem={config.problem} />}
+          {signedIn ? (
+            <SignedIn expiresAt={expiresAt} />
+          ) : (
+            <SignedOut problem={config.problem} />
+          )}
         </div>
 
         {devOverride && (
@@ -54,7 +64,7 @@ export default async function AdminPage() {
   );
 }
 
-function SignedIn() {
+function SignedIn({ expiresAt }: { expiresAt: Date | null }) {
   return (
     <>
       <div className="flex items-center gap-2 text-roam-accent">
@@ -62,9 +72,37 @@ function SignedIn() {
         <h1 className="text-lg font-semibold tracking-tight">Signed in</h1>
       </div>
 
+      {/*
+        The date, spelled out. Thirty days is long enough that "for thirty
+        days" tells you nothing useful a fortnight in — the question a reader
+        actually has is when they will next be asked for the password, and
+        that has an answer.
+
+        Rendered in UTC on purpose. The server formats this, and formatting a
+        date in the server's local zone would show one thing to the person who
+        deployed it and another to everyone else.
+      */}
+      {expiresAt !== null && (
+        <p className="mt-3 text-sm leading-relaxed">
+          This browser stays unlocked until{" "}
+          <time
+            dateTime={expiresAt.toISOString()}
+            className="font-medium text-foreground"
+          >
+            {expiresAt.toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC",
+            })}
+          </time>
+          .
+        </p>
+      )}
+
       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        The corrections panel is now available on every trip — rename, merge,
-        split, or delete a place that clustering got wrong.
+        The corrections panel is available on every trip — rename, merge, split,
+        or delete a place that clustering got wrong.
       </p>
 
       <div className="mt-6 space-y-2">

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ChevronLeft, Upload } from "lucide-react";
+import { ChevronLeft, LogOut, Upload } from "lucide-react";
 
+import { signOut } from "@/app/admin/actions";
 import { SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -71,13 +72,41 @@ export function SiteNav({ back, signedIn = false, className }: SiteNavProps) {
       {/* Only for the owner. Everyone else has nothing to import to, so the
           link would be a door with no handle. */}
       {signedIn && (
-        <Link
-          href="/upload"
-          className="ml-auto inline-flex items-center gap-1.5 rounded text-sm text-muted-foreground transition-colors hover:text-roam-accent focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
-        >
-          <Upload aria-hidden className="size-4" />
-          Upload
-        </Link>
+        <div className="ml-auto flex items-center gap-3 sm:gap-4">
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-1.5 rounded text-sm text-muted-foreground transition-colors hover:text-roam-accent focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
+          >
+            <Upload aria-hidden className="size-4" />
+            Upload
+          </Link>
+
+          {/* The indicator is a link to /admin rather than a bare label: it is
+              the only thing on screen saying the session exists, so it should
+              also be the way to the page that says more about it. */}
+          <Link
+            href="/admin"
+            className="rounded-full border border-roam-accent/40 bg-roam-accent/10 px-2.5 py-0.5 text-xs font-medium text-roam-accent transition-colors hover:bg-roam-accent/20 focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
+          >
+            Owner
+          </Link>
+
+          {/*
+            A form rather than a link, because signing out changes something.
+            A GET that mutates is a link any crawler, prefetcher or
+            link-preview can follow — and this app prefetches its own nav — so
+            the session would end without anyone having asked.
+          */}
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
+            >
+              <LogOut aria-hidden className="size-4" />
+              <span className="sr-only sm:not-sr-only">Sign out</span>
+            </button>
+          </form>
+        </div>
       )}
     </nav>
   );
