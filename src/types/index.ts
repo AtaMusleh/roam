@@ -122,8 +122,12 @@ export interface TripSpec {
   slug: string;
   /** Local calendar date the trip starts, as `YYYY-MM-DD`. */
   startDate: string;
-  /** IANA-style UTC offset in hours, applied to `startDate` and `arriveAt`. */
-  utcOffsetHours: number;
+  /**
+   * Minutes to add to UTC for the traveller's wall clock, applied to
+   * `startDate` and every `arriveAt`. Minutes rather than hours so it matches
+   * `Trip.utcOffsetMinutes`, and so half-hour zones are expressible.
+   */
+  utcOffsetMinutes: number;
   places: PlaceSpec[];
   visits: VisitSpec[];
   /** Points far from any place — a day trip, a photo taken on the way home. */
@@ -226,6 +230,8 @@ export interface GeneratedTripDataset {
     slug: string;
     startDate: IsoDateTime;
     endDate: IsoDateTime;
+    /** Carried through from the itinerary so the seed need not be told. */
+    utcOffsetMinutes: number;
   };
   photos: GeneratedPhoto[];
   groundTruth: GeneratedGroundTruth;

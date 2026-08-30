@@ -1,17 +1,25 @@
 /**
- * Seeds the public demo trip.
+ * Seeds one public demo trip.
  *
- *   npx tsx scripts/seed-demo-trip.ts --placeholder
- *   npx tsx scripts/seed-demo-trip.ts --no-geocode --epsilon 40 --min-points 5
- *   npx tsx scripts/seed-demo-trip.ts --placeholder --force-geocode
+ *   npx tsx scripts/seed-demo-trip.ts --city rome --placeholder
+ *   npx tsx scripts/seed-demo-trip.ts --city athens --no-geocode
+ *   npx tsx scripts/seed-demo-trip.ts --city lisbon --force-geocode
  *
- * Loads `data/rome-trip.json`, creates the trip, inserts its photos, and runs
+ * Loads `data/<city>-trip.json`, creates the trip, inserts its photos, and runs
  * the clustering ingest over them. The result is a browsable trip with named
  * places and ordered visits, which is what everything downstream — the map,
- * the timeline — will be built against.
+ * the timeline — is built against.
+ *
+ * Slug, dates and UTC offset all come from the dataset, which carries them
+ * through from `data/itineraries/<city>.json`. Nothing about a particular city
+ * is hard-coded here.
  *
  * Re-runnable. The existing trip with this slug is deleted first, so the
  * unique constraint never fires and each run starts from a clean state.
+ *
+ * `seedCity` is exported so `seed-all.ts` can run every city inside one
+ * process — which matters, because the Nominatim rate limiter is per-process
+ * and seeding cities in separate processes would let them talk over each other.
  */
 
 // Must stay first: it populates DATABASE_URL before the Prisma client below is
@@ -33,24 +41,22 @@ import type { UnsplashCache } from "../src/lib/unsplash-cache";
 import { prisma } from "../src/lib/prisma";
 import type { GeneratedPhoto, GeneratedTripDataset } from "../src/types";
 
-const DEFAULT_DATA = "data/rome-trip.json";
-const DEMO_SLUG = "rome-may-2026";
+/** The city seeded when none is named. */
+const DEFAULT_CITY = "rome";
+
+function datasetPathFor(city: string): string {
+  return `data/${city}-trip.json`;
+}
+
+function cachePathFor(city: string): string {
+  return `data/unsplash-${city}.json`;
+}
 
 /**
  * Longest edge of a placeholder image. The dataset's real dimensions are phone
  * sized (4032px), which picsum will not serve and nobody needs for a demo.
  */
 const PLACEHOLDER_MAX_EDGE = 1200;
-
-const DEFAULT_UNSPLASH_CACHE = "data/unsplash-rome.json";
-
-/**
- * The trip's UTC offset, in minutes. Rome in May is UTC+2.
- *
- * Hard-coded for the demo because the dataset is synthetic. A real import
- * derives it from EXIF — see the note in `src/lib/format.ts`.
- */
-const ROME_UTC_OFFSET_MINUTES = 120;
 
 interface PhotoRow {
   id: string;
@@ -116,12 +122,13 @@ function placeholderPhoto(photo: GeneratedPhoto): {
 const USAGE = `
 Usage: tsx scripts/seed-demo-trip.ts [options]
 
-  --data <path>       Dataset to seed from      (default: ${DEFAULT_DATA})
+  --city <slug>       Which city to seed        (default: ${DEFAULT_CITY})
+  --data <path>       Dataset to seed from      (default: data/<city>-trip.json)
   --placeholder       Use deterministic picsum.photos images instead of the
                       Unsplash cache. Subjects are random, so this is only a
                       stand-in for when no cache has been fetched
   --unsplash-cache <path>
-                      Photography cache to read   (default: ${DEFAULT_UNSPLASH_CACHE})
+                      Photography cache to read (default: data/unsplash-<city>.json)
   --no-geocode        Name places by coordinates, skipping the lookups entirely
   --force-geocode     Ignore cached names and look every place up again, for
                       testing changes to the naming rules
@@ -129,6 +136,36 @@ Usage: tsx scripts/seed-demo-trip.ts [options]
   --min-points <int>  DBSCAN core threshold     (default: pipeline default, 4)
   --help              Show this message
 `.trimStart();
+
+/** Everything `seedCity` needs; every field but `city` has a sensible default. */
+export interface SeedCityOptions {
+  city: string;
+  /** Overrides `data/<city>-trip.json`. */
+  dataPath?: string;
+  /** Overrides `data/unsplash-<city>.json`. */
+  cachePath?: string;
+  /** Use picsum stand-ins rather than the Unsplash cache. */
+  placeholder?: boolean;
+  /** Name places by lookup rather than by coordinates. Defaults to true. */
+  geocode?: boolean;
+  /** Ignore cached names and look every place up again. */
+  forceGeocode?: boolean;
+  epsilonMeters?: number;
+  minPoints?: number;
+  /** Where progress goes. Defaults to stdout. */
+  log?: (text?: string) => void;
+}
+
+/** What one city's seed produced, for `seed-all` to summarise across cities. */
+export interface SeedCitySummary {
+  city: string;
+  slug: string;
+  photos: number;
+  places: number;
+  visits: number;
+  /** Photographs left pointing at an image that will not load. */
+  broken: number;
+}
 
 function parseNumber(
   raw: string | undefined,
@@ -144,34 +181,25 @@ function parseNumber(
   return value;
 }
 
-async function main(): Promise<void> {
-  const { values } = parseArgs({
-    options: {
-      data: { type: "string" },
-      placeholder: { type: "boolean", default: false },
-      "no-geocode": { type: "boolean", default: false },
-      "force-geocode": { type: "boolean", default: false },
-      epsilon: { type: "string" },
-      "min-points": { type: "string" },
-      "unsplash-cache": { type: "string" },
-      help: { type: "boolean", default: false },
-    },
-    strict: true,
-  });
+export async function seedCity(
+  options: SeedCityOptions,
+): Promise<SeedCitySummary> {
+  const { city } = options;
+  const placeholder = options.placeholder ?? false;
 
-  if (values.help) {
-    process.stdout.write(USAGE);
-    return;
-  }
-
-  const dataPath = resolve(process.cwd(), values.data ?? DEFAULT_DATA);
+  const dataPath = resolve(
+    process.cwd(),
+    options.dataPath ?? datasetPathFor(city),
+  );
   const dataset = JSON.parse(
     readFileSync(dataPath, "utf8"),
   ) as GeneratedTripDataset;
 
-  const out = (text = ""): void => {
-    process.stdout.write(`${text}\n`);
-  };
+  const out =
+    options.log ??
+    ((text = ""): void => {
+      process.stdout.write(`${text}\n`);
+    });
 
   out(`Seeding from ${dataPath}`);
   out(`  ${dataset.photos.length} photos, trip "${dataset.trip.name}"`);
@@ -182,10 +210,12 @@ async function main(): Promise<void> {
   // complete reset rather than a partial overwrite. Re-running the script is
   // therefore safe, and never trips the unique constraint on `slug`.
 
-  const existing = await prisma.trip.findUnique({ where: { slug: DEMO_SLUG } });
+  const slug = dataset.trip.slug;
+
+  const existing = await prisma.trip.findUnique({ where: { slug } });
   if (existing) {
     await prisma.trip.delete({ where: { id: existing.id } });
-    out(`  removed the previous "${DEMO_SLUG}" trip`);
+    out(`  removed the previous "${slug}" trip`);
   }
 
   // --- trip and photos -----------------------------------------------------
@@ -193,38 +223,38 @@ async function main(): Promise<void> {
   const trip = await prisma.trip.create({
     data: {
       name: dataset.trip.name,
-      slug: DEMO_SLUG,
+      slug,
       startDate: new Date(dataset.trip.startDate),
       endDate: new Date(dataset.trip.endDate),
-      utcOffsetMinutes: ROME_UTC_OFFSET_MINUTES,
+      // Carried through from the itinerary. The dataset is synthetic, so this
+      // is declared rather than measured; a real import derives it from EXIF —
+      // see the note in `src/lib/format.ts`.
+      utcOffsetMinutes: dataset.trip.utcOffsetMinutes,
       isPublic: true,
     },
   });
 
   // --- choose an image for every photograph ---------------------------------
   //
-  // Three sources, in descending order of how good the demo looks:
+  // Two sources, in descending order of how good the demo looks:
   //
   //  1. The Unsplash cache — real photographs of the actual places, which is
   //     the only one that makes the demo worth showing anyone.
-  //  2. picsum.photos placeholders, under --placeholder. Stable per photo, but
-  //     random subjects: the Colosseum gets a waterfall.
-  //  3. The dataset's Cloudinary URLs, which point at an account that has
-  //     nothing uploaded to it yet.
+  //  2. picsum.photos placeholders. Stable per photo, but random subjects: the
+  //     Colosseum gets a waterfall.
+  //
+  // The dataset's own Cloudinary URLs are deliberately *not* a source. They
+  // point at an account with nothing uploaded to it, so every one of them is a
+  // broken image; a random photograph of the wrong thing at least renders.
 
-  const cachePath = resolve(
-    process.cwd(),
-    values["unsplash-cache"] ?? DEFAULT_UNSPLASH_CACHE,
-  );
-  const cache = values.placeholder ? null : readUnsplashCache(cachePath);
+  const cachePath = resolve(process.cwd(), options.cachePath ?? cachePathFor(city));
+  const cache = placeholder ? null : readUnsplashCache(cachePath);
 
   if (cache) {
     out(`  using photography from ${cachePath}`);
-  } else if (!values.placeholder) {
-    out(`  no Unsplash cache at ${cachePath}`);
-    out("  falling back to the dataset's Cloudinary URLs, which resolve to nothing.");
-    out("  Run: UNSPLASH_ACCESS_KEY=... npx tsx scripts/fetch-unsplash.ts");
-    out("  ...or re-run this with --placeholder.");
+  } else if (!placeholder) {
+    out(`  no Unsplash cache at ${cachePath} — using picsum.photos placeholders`);
+    out(`  Run: UNSPLASH_ACCESS_KEY=... npx tsx scripts/fetch-unsplash.ts --city ${city}`);
   }
 
   // Ground truth tells us which place each photograph belongs to, so each one
@@ -346,12 +376,8 @@ async function main(): Promise<void> {
       }
     }
 
-    const fallback = values.placeholder
-      ? placeholderPhoto(photo)
-      : { url: photo.url, width: photo.width, height: photo.height };
-
     return {
-      ...fallback,
+      ...placeholderPhoto(photo),
       blurhash: photo.blurhash,
       photographerName: null,
       photographerUrl: null,
@@ -383,13 +409,11 @@ async function main(): Promise<void> {
   const credited = rows.filter((row) => row.photographerName !== null).length;
   const dead = rows.filter((row) => row.url.includes("res.cloudinary.com")).length;
 
+  const standIns = rows.length - credited;
+
   out(
-    `  inserted ${rows.length} photos` +
-      (credited > 0
-        ? ` (${credited} from Unsplash, credited)`
-        : values.placeholder
-          ? " with picsum.photos placeholders"
-          : ""),
+    `  inserted ${rows.length} photos: ` +
+      `${credited} from Unsplash (credited), ${standIns} picsum stand-ins`,
   );
 
   if (borrowed > 0) {
@@ -399,21 +423,24 @@ async function main(): Promise<void> {
     );
   }
 
-  // A Cloudinary URL in the demo is a broken image: that account has nothing
-  // uploaded to it. Worth saying loudly rather than leaving to be discovered.
+  // Nothing should reach this any more — Cloudinary is no longer an image
+  // source. Kept as a tripwire, because a broken image is easy to ship and
+  // hard to notice among four hundred that work.
   if (dead > 0) {
     out(
       `  WARNING: ${dead} photos still point at unused Cloudinary URLs and will ` +
-        "render broken. Re-run scripts/fetch-unsplash.ts, or pass --placeholder.",
+        "render broken.",
     );
   }
 
   // --- cluster -------------------------------------------------------------
 
-  const geocode = !values["no-geocode"];
+  const geocode = options.geocode ?? true;
+  const forceGeocode = options.forceGeocode ?? false;
+
   if (geocode) {
     out(
-      values["force-geocode"]
+      forceGeocode
         ? "  naming places, ignoring the cache (several seconds each)..."
         : "  naming places (several seconds each on a cold cache)...",
     );
@@ -421,10 +448,10 @@ async function main(): Promise<void> {
 
   const started = Date.now();
   const result = await ingestTrip(trip.id, {
-    epsilonMeters: parseNumber(values.epsilon, "epsilon", (v) => v > 0),
-    minPoints: parseNumber(values["min-points"], "min-points", Number.isInteger),
+    epsilonMeters: options.epsilonMeters,
+    minPoints: options.minPoints,
     geocode,
-    forceGeocode: values["force-geocode"],
+    forceGeocode,
   });
   const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 
@@ -458,14 +485,65 @@ async function main(): Promise<void> {
   }
 
   out();
-  out(`Demo trip ready: /${DEMO_SLUG} (public)`);
+  out(`Trip ready: /${slug} (public)`);
+
+  return {
+    city,
+    slug,
+    photos: rows.length,
+    places: result.places.length,
+    visits: result.visits.length,
+    broken: dead,
+  };
 }
 
-main()
-  .catch((error: unknown) => {
-    process.stderr.write(
-      `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`,
-    );
-    process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
+async function main(): Promise<void> {
+  const { values } = parseArgs({
+    options: {
+      city: { type: "string" },
+      data: { type: "string" },
+      placeholder: { type: "boolean", default: false },
+      "no-geocode": { type: "boolean", default: false },
+      "force-geocode": { type: "boolean", default: false },
+      epsilon: { type: "string" },
+      "min-points": { type: "string" },
+      "unsplash-cache": { type: "string" },
+      help: { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+
+  if (values.help) {
+    process.stdout.write(USAGE);
+    return;
+  }
+
+  await seedCity({
+    city: values.city ?? DEFAULT_CITY,
+    dataPath: values.data,
+    cachePath: values["unsplash-cache"],
+    placeholder: values.placeholder,
+    geocode: !values["no-geocode"],
+    forceGeocode: values["force-geocode"],
+    epsilonMeters: parseNumber(values.epsilon, "epsilon", (v) => v > 0),
+    minPoints: parseNumber(values["min-points"], "min-points", Number.isInteger),
+  });
+}
+
+// Only when run directly. Importing this module for `seedCity` — which is
+// exactly what `seed-all.ts` does — must not seed Rome as a side effect.
+const entry = process.argv[1];
+const invokedDirectly =
+  entry !== undefined &&
+  resolve(entry).replace(/\\/g, "/").endsWith("/scripts/seed-demo-trip.ts");
+
+if (invokedDirectly) {
+  main()
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+      );
+      process.exitCode = 1;
+    })
+    .finally(() => prisma.$disconnect());
+}

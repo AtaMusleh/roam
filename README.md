@@ -9,7 +9,8 @@ carries a trip. Roam clusters the coordinates into places, cuts each place back
 apart along the time axis into separate visits, names them from OpenStreetMap,
 and draws the result as a map and a timeline.
 
-The demo trip is at `/rome-may-2026`.
+The demo trips are indexed at `/trips`; Rome, the one everything was built
+against, is at `/rome-may-2026`.
 
 ## Running it
 
@@ -18,9 +19,43 @@ npm install
 cp .env.example .env      # then fill in DATABASE_URL and NEXT_PUBLIC_MAPBOX_TOKEN
 npm run db:generate       # generate the Prisma client
 npm run db:push           # create the schema
-npm run seed:demo         # build the Rome demo trip
+npm run seed:all          # build every demo trip
 npm run dev
 ```
+
+## Trips
+
+Each demo trip starts as an itinerary in `data/itineraries/<city>.json`: a name,
+a date range, a UTC offset, and an ordered list of real places with the
+coordinates, visit durations and photograph counts a traveller might plausibly
+have produced. Four are included — Rome, Barcelona, Lisbon and Athens.
+
+Nothing downstream knows a city by name. The generator turns an itinerary into a
+synthetic dataset, the fetch script builds that dataset's photography cache, and
+the seed loads it; each takes `--city <slug>` and reads and writes the files for
+that city alone.
+
+```bash
+npx tsx scripts/generate-trip.ts --city lisbon        # -> data/lisbon-trip.json
+npx tsx scripts/fetch-unsplash.ts --city lisbon       # -> data/unsplash-lisbon.json
+npx tsx scripts/seed-demo-trip.ts --city lisbon       # -> /lisbon-march-2026
+```
+
+Adding a fifth city means writing a fifth itinerary and running those three.
+
+`npm run seed:all` does the seed step for every itinerary in one process, which
+matters: the rate limiter that keeps Nominatim and Overpass requests to one a
+second lives in module state, so seeding cities as separate processes would run
+several limiters at once and hit those free services at several times the agreed
+rate.
+
+The Unsplash demo tier allows fifty requests an hour and one city costs roughly
+twenty-five, so the caches cannot all be built in one sitting. A fetch that runs
+out of budget writes the buckets it filled and names the ones it did not; running
+it again later merges into what is already on disk rather than starting over. A
+city with no cache seeds with `picsum.photos` stand-ins — right shapes, wrong
+subjects — and one with a partial cache borrows the missing places' photographs
+from the nearest place it does have some for.
 
 ## Environment
 
@@ -29,10 +64,11 @@ npm run dev
 | `DATABASE_URL` | everything | PostgreSQL. Prisma 7 talks to it through the `pg` driver adapter. |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | the map | Free tier is plenty. Without it the trip page renders the timeline and explains what is missing. |
 | `ALLOW_EDITS` | manual place corrections | Must be exactly `true`. See below. |
-| `UNSPLASH_ACCESS_KEY` | rebuilding the demo photography | Only needed to regenerate `data/unsplash-rome.json`, which is committed. |
+| `UNSPLASH_ACCESS_KEY` | rebuilding the demo photography | Only needed to regenerate the `data/unsplash-<city>.json` caches, which are committed. |
 | `NOMINATIM_CONTACT` | politeness | Goes in the User-Agent sent to Nominatim and Overpass so an operator can reach you rather than block you. |
 | `OVERPASS_ENDPOINT` | optional | Point at a mirror or your own instance; defaults to the public one. |
 | `NEXT_PUBLIC_GITHUB_URL` | the footer link | Defaults to a placeholder. |
+| `NEXT_PUBLIC_FEATURED_TRIP` | the home page | Slug of the trip offered as a direct link beside the index. Defaults to `rome-may-2026`; falls back to the most recent trip if that slug is absent. |
 
 ## Manual place corrections
 
@@ -58,10 +94,11 @@ centroid and photo count and renumbers the trip's visit sequences.
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | Development server. |
-| `npm run seed:demo` | Rebuilds the Rome demo trip from `data/rome-trip.json`. `--placeholder` swaps in stand-in imagery; `--force-geocode` re-looks-up every place name. |
-| `npm run generate:trip` | Regenerates the synthetic dataset. Seeded, so the same seed gives the same trip. |
+| `npm run seed:all` | Rebuilds every trip in one process, sharing one rate limiter. `-- --only rome,athens` narrows it. |
+| `npm run seed:demo` | Rebuilds one trip: `-- --city athens`. `--placeholder` swaps in stand-in imagery; `--force-geocode` re-looks-up every place name. |
+| `npm run generate:trip` | Regenerates one city's dataset from its itinerary: `-- --city athens`. Seeded, so the same seed gives the same trip. |
 | `npm run evaluate:clustering` | Scores clustering against the dataset's ground truth. `--sweep` tries every parameter combination. |
-| `npm run fetch:unsplash` | Rebuilds the committed photography cache. Needs `UNSPLASH_ACCESS_KEY`. |
+| `npm run fetch:unsplash` | Rebuilds one city's committed photography cache: `-- --city athens`. Needs `UNSPLASH_ACCESS_KEY`. Skips buckets already cached; `--refetch` searches them again. |
 | `npm run db:apply` | Applies the schema as raw DDL, for machines where Prisma's native schema engine cannot run. |
 | `npm run typecheck` | `next typegen` then `tsc --noEmit`. |
 

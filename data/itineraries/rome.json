@@ -1,0 +1,220 @@
+{
+  "name": "Rome, May 2026",
+  "slug": "rome-may-2026",
+  "startDate": "2026-05-11",
+  "utcOffsetMinutes": 120,
+  "places": [
+    {
+      "key": "pantheon",
+      "name": "Pantheon",
+      "lat": 41.8986,
+      "lng": 12.4769,
+      "address": "Piazza della Rotonda, 00186 Roma",
+      "sigmaMeters": 18
+    },
+    {
+      "key": "sant-eustachio",
+      "name": "Sant'Eustachio Il Caffe",
+      "lat": 41.8987,
+      "lng": 12.4757,
+      "address": "Piazza di Sant'Eustachio 82, 00186 Roma",
+      "sigmaMeters": 8
+    },
+    {
+      "key": "piazza-navona",
+      "name": "Piazza Navona",
+      "lat": 41.8992,
+      "lng": 12.4731,
+      "address": "Piazza Navona, 00186 Roma",
+      "sigmaMeters": 40
+    },
+    {
+      "key": "campo-de-fiori",
+      "name": "Campo de' Fiori",
+      "lat": 41.8956,
+      "lng": 12.4722,
+      "address": "Piazza Campo de' Fiori, 00186 Roma",
+      "sigmaMeters": 25
+    },
+    {
+      "key": "colosseum",
+      "name": "Colosseo",
+      "lat": 41.8902,
+      "lng": 12.4922,
+      "address": "Piazza del Colosseo 1, 00184 Roma",
+      "sigmaMeters": 45
+    },
+    {
+      "key": "roman-forum",
+      "name": "Foro Romano",
+      "lat": 41.8925,
+      "lng": 12.4853,
+      "address": "Via della Salara Vecchia 5/6, 00186 Roma",
+      "sigmaMeters": 60
+    },
+    {
+      "key": "palatine-hill",
+      "name": "Palatino",
+      "lat": 41.8887,
+      "lng": 12.4875,
+      "address": "Via di San Gregorio 30, 00186 Roma",
+      "sigmaMeters": 55
+    },
+    {
+      "key": "trastevere",
+      "name": "Piazza di Santa Maria in Trastevere",
+      "lat": 41.8893,
+      "lng": 12.4695,
+      "address": "Piazza di Santa Maria in Trastevere, 00153 Roma",
+      "sigmaMeters": 25
+    },
+    {
+      "key": "vatican-museums",
+      "name": "Musei Vaticani",
+      "lat": 41.9065,
+      "lng": 12.4536,
+      "address": "Viale Vaticano, 00165 Roma",
+      "sigmaMeters": 35
+    },
+    {
+      "key": "st-peters",
+      "name": "Basilica di San Pietro",
+      "lat": 41.9022,
+      "lng": 12.4539,
+      "address": "Piazza San Pietro, 00120 Citta del Vaticano",
+      "sigmaMeters": 50
+    },
+    {
+      "key": "castel-santangelo",
+      "name": "Castel Sant'Angelo",
+      "lat": 41.9031,
+      "lng": 12.4663,
+      "address": "Lungotevere Castello 50, 00193 Roma",
+      "sigmaMeters": 30
+    },
+    {
+      "key": "trevi",
+      "name": "Fontana di Trevi",
+      "lat": 41.9009,
+      "lng": 12.4833,
+      "address": "Piazza di Trevi, 00187 Roma",
+      "sigmaMeters": 15
+    }
+  ],
+  "visits": [
+    {
+      "placeKey": "pantheon",
+      "day": 0,
+      "arriveAt": "10:15",
+      "durationMinutes": 45,
+      "photoCount": 22
+    },
+    {
+      "placeKey": "sant-eustachio",
+      "day": 0,
+      "arriveAt": "11:10",
+      "durationMinutes": 35,
+      "photoCount": 9
+    },
+    {
+      "placeKey": "piazza-navona",
+      "day": 0,
+      "arriveAt": "12:00",
+      "durationMinutes": 50,
+      "photoCount": 18
+    },
+    {
+      "placeKey": "campo-de-fiori",
+      "day": 0,
+      "arriveAt": "13:10",
+      "durationMinutes": 60,
+      "photoCount": 14
+    },
+    {
+      "placeKey": "colosseum",
+      "day": 1,
+      "arriveAt": "09:30",
+      "durationMinutes": 100,
+      "photoCount": 41
+    },
+    {
+      "placeKey": "roman-forum",
+      "day": 1,
+      "arriveAt": "11:30",
+      "durationMinutes": 95,
+      "photoCount": 33
+    },
+    {
+      "placeKey": "palatine-hill",
+      "day": 1,
+      "arriveAt": "13:15",
+      "durationMinutes": 70,
+      "photoCount": 21
+    },
+    {
+      "placeKey": "trastevere",
+      "day": 1,
+      "arriveAt": "19:30",
+      "durationMinutes": 120,
+      "photoCount": 26
+    },
+    {
+      "placeKey": "vatican-museums",
+      "day": 2,
+      "arriveAt": "08:45",
+      "durationMinutes": 180,
+      "photoCount": 58
+    },
+    {
+      "placeKey": "st-peters",
+      "day": 2,
+      "arriveAt": "12:15",
+      "durationMinutes": 110,
+      "photoCount": 37
+    },
+    {
+      "placeKey": "castel-santangelo",
+      "day": 2,
+      "arriveAt": "14:40",
+      "durationMinutes": 65,
+      "photoCount": 19
+    },
+    {
+      "placeKey": "sant-eustachio",
+      "day": 3,
+      "arriveAt": "09:20",
+      "durationMinutes": 30,
+      "photoCount": 7
+    },
+    {
+      "placeKey": "trevi",
+      "day": 3,
+      "arriveAt": "10:10",
+      "durationMinutes": 55,
+      "photoCount": 29
+    },
+    {
+      "placeKey": "trastevere",
+      "day": 4,
+      "arriveAt": "12:30",
+      "durationMinutes": 140,
+      "photoCount": 31
+    }
+  ],
+  "outliers": [
+    {
+      "name": "Ostia Antica",
+      "lat": 41.7556,
+      "lng": 12.2917,
+      "day": 3,
+      "takenAt": "16:40"
+    },
+    {
+      "name": "Villa d'Este, Tivoli",
+      "lat": 41.9631,
+      "lng": 12.7958,
+      "day": 4,
+      "takenAt": "09:05"
+    }
+  ]
+}

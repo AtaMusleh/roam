@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { SiteNav } from "@/components/site-nav";
 import { buildTimeline } from "@/components/timeline/build";
 import { TripStats } from "@/components/trip-stats";
 import { TripView } from "@/components/trip-view";
@@ -47,6 +48,8 @@ export default async function TripPage({ params }: PageProps<"/[slug]">) {
     // rest of the app keeps whatever theme it chooses. The trip view is dark
     // because the photographs and the map should be the brightest things on it.
     <div className="dark flex min-h-dvh flex-col bg-background text-foreground lg:h-dvh lg:overflow-hidden">
+      <SiteNav back={{ href: "/trips", label: "All trips" }} />
+
       <header className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-6 lg:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">

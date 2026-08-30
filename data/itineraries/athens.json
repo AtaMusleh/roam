@@ -1,0 +1,209 @@
+{
+  "name": "Athens, June 2026",
+  "slug": "athens-june-2026",
+  "startDate": "2026-06-15",
+  "utcOffsetMinutes": 180,
+  "places": [
+    {
+      "key": "acropolis",
+      "name": "Acropolis",
+      "lat": 37.9715,
+      "lng": 23.7257,
+      "address": "Athens 105 58",
+      "sigmaMeters": 65
+    },
+    {
+      "key": "parthenon",
+      "name": "Parthenon",
+      "lat": 37.9715,
+      "lng": 23.7267,
+      "address": "Acropolis, Athens 105 58",
+      "sigmaMeters": 30
+    },
+    {
+      "key": "ancient-agora",
+      "name": "Ancient Agora",
+      "lat": 37.9755,
+      "lng": 23.7222,
+      "address": "Adrianou 24, Athens 105 55",
+      "sigmaMeters": 75
+    },
+    {
+      "key": "plaka",
+      "name": "Plaka",
+      "lat": 37.9727,
+      "lng": 23.7295,
+      "address": "Plaka, Athens 105 58",
+      "sigmaMeters": 70
+    },
+    {
+      "key": "anafiotika",
+      "name": "Anafiotika",
+      "lat": 37.9727,
+      "lng": 23.7268,
+      "address": "Anafiotika, Athens 105 56",
+      "sigmaMeters": 28
+    },
+    {
+      "key": "monastiraki",
+      "name": "Monastiraki",
+      "lat": 37.9761,
+      "lng": 23.7256,
+      "address": "Monastiraki Square, Athens 105 55",
+      "sigmaMeters": 45
+    },
+    {
+      "key": "temple-olympian-zeus",
+      "name": "Temple of Olympian Zeus",
+      "lat": 37.9693,
+      "lng": 23.7331,
+      "address": "Athens 105 57",
+      "sigmaMeters": 55
+    },
+    {
+      "key": "lycabettus",
+      "name": "Lycabettus Hill",
+      "lat": 37.9825,
+      "lng": 23.7434,
+      "address": "Lofos Lykavittou, Athens 114 71",
+      "sigmaMeters": 60
+    },
+    {
+      "key": "national-archaeological-museum",
+      "name": "National Archaeological Museum",
+      "lat": 37.9891,
+      "lng": 23.7326,
+      "address": "28is Oktovriou 44, Athens 106 82",
+      "sigmaMeters": 35
+    },
+    {
+      "key": "syntagma",
+      "name": "Syntagma Square",
+      "lat": 37.9755,
+      "lng": 23.7348,
+      "address": "Syntagma Square, Athens 105 63",
+      "sigmaMeters": 40
+    }
+  ],
+  "visits": [
+    {
+      "placeKey": "acropolis",
+      "day": 0,
+      "arriveAt": "08:15",
+      "durationMinutes": 95,
+      "photoCount": 48
+    },
+    {
+      "placeKey": "parthenon",
+      "day": 0,
+      "arriveAt": "10:05",
+      "durationMinutes": 75,
+      "photoCount": 39
+    },
+    {
+      "placeKey": "anafiotika",
+      "day": 0,
+      "arriveAt": "12:00",
+      "durationMinutes": 55,
+      "photoCount": 18
+    },
+    {
+      "placeKey": "plaka",
+      "day": 0,
+      "arriveAt": "13:30",
+      "durationMinutes": 110,
+      "photoCount": 34
+    },
+
+    {
+      "placeKey": "ancient-agora",
+      "day": 1,
+      "arriveAt": "09:20",
+      "durationMinutes": 120,
+      "photoCount": 41
+    },
+    {
+      "placeKey": "monastiraki",
+      "day": 1,
+      "arriveAt": "11:45",
+      "durationMinutes": 85,
+      "photoCount": 26
+    },
+    {
+      "placeKey": "syntagma",
+      "day": 1,
+      "arriveAt": "16:10",
+      "durationMinutes": 50,
+      "photoCount": 15
+    },
+
+    {
+      "placeKey": "national-archaeological-museum",
+      "day": 2,
+      "arriveAt": "10:00",
+      "durationMinutes": 165,
+      "photoCount": 56
+    },
+    {
+      "placeKey": "temple-olympian-zeus",
+      "day": 2,
+      "arriveAt": "14:40",
+      "durationMinutes": 70,
+      "photoCount": 23
+    },
+
+    {
+      "placeKey": "lycabettus",
+      "day": 3,
+      "arriveAt": "18:30",
+      "durationMinutes": 105,
+      "photoCount": 37
+    },
+    {
+      "placeKey": "plaka",
+      "day": 3,
+      "arriveAt": "21:00",
+      "durationMinutes": 80,
+      "photoCount": 20
+    },
+
+    {
+      "placeKey": "monastiraki",
+      "day": 4,
+      "arriveAt": "10:45",
+      "durationMinutes": 60,
+      "photoCount": 17
+    },
+    {
+      "placeKey": "acropolis",
+      "day": 4,
+      "arriveAt": "12:30",
+      "durationMinutes": 65,
+      "photoCount": 22
+    },
+
+    {
+      "placeKey": "syntagma",
+      "day": 5,
+      "arriveAt": "09:15",
+      "durationMinutes": 45,
+      "photoCount": 12
+    },
+    {
+      "placeKey": "temple-olympian-zeus",
+      "day": 5,
+      "arriveAt": "10:40",
+      "durationMinutes": 55,
+      "photoCount": 16
+    }
+  ],
+  "outliers": [
+    {
+      "name": "Cape Sounion",
+      "lat": 37.6503,
+      "lng": 24.0245,
+      "day": 3,
+      "takenAt": "07:20"
+    }
+  ]
+}

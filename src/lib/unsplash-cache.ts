@@ -36,17 +36,32 @@ export interface UnsplashCache {
  */
 export const GENERAL_BUCKET = "_general";
 
-/** Search used for that bucket. */
-export const GENERAL_QUERY = "Rome street";
+/**
+ * A city slug as it should read in a search: `bunkers-del-carmel` is a place
+ * key, `Barcelona` is what a photographer tagged their picture with.
+ */
+export function cityLabel(city: string): string {
+  return city
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/** Search used for the general bucket. */
+export function generalQuery(city: string): string {
+  return `${cityLabel(city)} street`;
+}
 
 /**
- * Appended to a place's name to keep the search in the right city. "Foro
- * Romano" alone is ambiguous enough to return a forum in Pompeii.
+ * Appends the city to a place's name to keep the search in the right one.
+ *
+ * "Foro Romano" alone is ambiguous enough to return a forum in Pompeii, and
+ * "Gothic Quarter" without a city returns Gothic quarters everywhere. The
+ * suffix has to be the *right* city: an early multi-city run left "Rome"
+ * hard-coded here, and "Barri Gòtic Rome" returned nothing at all.
  */
-export const QUERY_SUFFIX = "Rome";
-
-export function bucketQuery(placeName: string): string {
-  return `${placeName} ${QUERY_SUFFIX}`;
+export function bucketQuery(placeName: string, city: string): string {
+  return `${placeName} ${cityLabel(city)}`;
 }
 
 /** Which orientation a photograph of these dimensions needs. */

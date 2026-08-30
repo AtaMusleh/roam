@@ -1,0 +1,215 @@
+{
+  "name": "Barcelona, September 2026",
+  "slug": "barcelona-september-2026",
+  "startDate": "2026-09-07",
+  "utcOffsetMinutes": 120,
+  "places": [
+    {
+      "key": "sagrada-familia",
+      "name": "Sagrada Família",
+      "lat": 41.4036,
+      "lng": 2.1744,
+      "address": "Carrer de Mallorca 401, 08013 Barcelona",
+      "sigmaMeters": 45
+    },
+    {
+      "key": "park-guell",
+      "name": "Park Güell",
+      "lat": 41.4145,
+      "lng": 2.1527,
+      "address": "Carrer d'Olot, 08024 Barcelona",
+      "sigmaMeters": 70
+    },
+    {
+      "key": "casa-batllo",
+      "name": "Casa Batlló",
+      "lat": 41.3917,
+      "lng": 2.165,
+      "address": "Passeig de Gràcia 43, 08007 Barcelona",
+      "sigmaMeters": 16
+    },
+    {
+      "key": "la-rambla",
+      "name": "La Rambla",
+      "lat": 41.3812,
+      "lng": 2.172,
+      "address": "La Rambla, 08002 Barcelona",
+      "sigmaMeters": 90
+    },
+    {
+      "key": "mercat-boqueria",
+      "name": "Mercat de la Boqueria",
+      "lat": 41.3817,
+      "lng": 2.1716,
+      "address": "La Rambla 91, 08001 Barcelona",
+      "sigmaMeters": 20
+    },
+    {
+      "key": "barceloneta",
+      "name": "Barceloneta",
+      "lat": 41.3785,
+      "lng": 2.1925,
+      "address": "Platja de la Barceloneta, 08003 Barcelona",
+      "sigmaMeters": 85
+    },
+    {
+      "key": "gothic-quarter",
+      "name": "Barri Gòtic",
+      "lat": 41.3835,
+      "lng": 2.1762,
+      "address": "Barri Gòtic, 08002 Barcelona",
+      "sigmaMeters": 60
+    },
+    {
+      "key": "camp-nou",
+      "name": "Camp Nou",
+      "lat": 41.3809,
+      "lng": 2.1228,
+      "address": "Carrer d'Arístides Maillol 12, 08028 Barcelona",
+      "sigmaMeters": 55
+    },
+    {
+      "key": "montjuic",
+      "name": "Montjuïc",
+      "lat": 41.3641,
+      "lng": 2.1585,
+      "address": "Montjuïc, 08038 Barcelona",
+      "sigmaMeters": 95
+    },
+    {
+      "key": "bunkers-del-carmel",
+      "name": "Bunkers del Carmel",
+      "lat": 41.4194,
+      "lng": 2.1618,
+      "address": "Carrer de Marià Labèrnia, 08032 Barcelona",
+      "sigmaMeters": 30
+    }
+  ],
+  "visits": [
+    {
+      "placeKey": "sagrada-familia",
+      "day": 0,
+      "arriveAt": "09:40",
+      "durationMinutes": 115,
+      "photoCount": 52
+    },
+    {
+      "placeKey": "casa-batllo",
+      "day": 0,
+      "arriveAt": "12:20",
+      "durationMinutes": 70,
+      "photoCount": 27
+    },
+    {
+      "placeKey": "la-rambla",
+      "day": 0,
+      "arriveAt": "14:05",
+      "durationMinutes": 55,
+      "photoCount": 19
+    },
+    {
+      "placeKey": "mercat-boqueria",
+      "day": 0,
+      "arriveAt": "15:15",
+      "durationMinutes": 45,
+      "photoCount": 24
+    },
+
+    {
+      "placeKey": "park-guell",
+      "day": 1,
+      "arriveAt": "08:50",
+      "durationMinutes": 135,
+      "photoCount": 61
+    },
+    {
+      "placeKey": "bunkers-del-carmel",
+      "day": 1,
+      "arriveAt": "12:00",
+      "durationMinutes": 60,
+      "photoCount": 22
+    },
+    {
+      "placeKey": "gothic-quarter",
+      "day": 1,
+      "arriveAt": "17:30",
+      "durationMinutes": 110,
+      "photoCount": 33
+    },
+
+    {
+      "placeKey": "montjuic",
+      "day": 2,
+      "arriveAt": "10:10",
+      "durationMinutes": 165,
+      "photoCount": 47
+    },
+    {
+      "placeKey": "camp-nou",
+      "day": 2,
+      "arriveAt": "15:30",
+      "durationMinutes": 90,
+      "photoCount": 29
+    },
+
+    {
+      "placeKey": "barceloneta",
+      "day": 3,
+      "arriveAt": "11:20",
+      "durationMinutes": 150,
+      "photoCount": 44
+    },
+    {
+      "placeKey": "mercat-boqueria",
+      "day": 3,
+      "arriveAt": "17:40",
+      "durationMinutes": 35,
+      "photoCount": 11
+    },
+
+    {
+      "placeKey": "la-rambla",
+      "day": 4,
+      "arriveAt": "10:30",
+      "durationMinutes": 65,
+      "photoCount": 17
+    },
+    {
+      "placeKey": "sagrada-familia",
+      "day": 4,
+      "arriveAt": "13:15",
+      "durationMinutes": 50,
+      "photoCount": 20
+    },
+    {
+      "placeKey": "gothic-quarter",
+      "day": 4,
+      "arriveAt": "19:00",
+      "durationMinutes": 95,
+      "photoCount": 26
+    }
+  ],
+  "outliers": [
+    {
+      "name": "Montserrat",
+      "lat": 41.5934,
+      "lng": 1.8376,
+      "day": 2,
+      "takenAt": "07:15"
+    },
+    {
+      "name": "Sitges",
+      "lat": 41.2351,
+      "lng": 1.8117,
+      "day": 3,
+      "takenAt": "19:50"
+    },
+    {
+      "name": "Girona",
+      "lat": 41.9794,
+      "lng": 2.8214,
+      "day": 4,
+      "takenAt": "07:40"
+    }
+  ]
+}

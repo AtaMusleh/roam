@@ -16,5 +16,16 @@ export const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";
 
 export const SITE_NAME = "Roam";
 
+/**
+ * The trip the home page offers as a direct way in, alongside the index.
+ *
+ * Rome is the one every part of this was built against, so it is the one worth
+ * pointing a first-time reader at. Named here rather than in the page so a
+ * deployment with a different set of trips can change it in one place; if the
+ * slug is absent, the home page falls back to the most recent trip.
+ */
+export const FEATURED_TRIP_SLUG =
+  process.env.NEXT_PUBLIC_FEATURED_TRIP?.trim() || "rome-may-2026";
+
 export const SITE_TAGLINE =
   "Roam reads the coordinates buried in your holiday photographs and turns them back into the journey you took — the places you stopped, how long you stayed, and what you pointed the camera at.";

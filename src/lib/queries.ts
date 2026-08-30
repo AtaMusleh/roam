@@ -11,6 +11,7 @@ import type { GpsSource } from "@/types";
 
 import { tripDayKey } from "./format";
 import { prisma } from "./prisma";
+import { FEATURED_TRIP_SLUG } from "./site";
 
 export interface TripPhoto {
   id: string;
@@ -177,20 +178,24 @@ export interface ShowcasePhoto {
 }
 
 export interface Showcase {
-  name: string;
-  slug: string;
-  stats: TripStats;
-  /** A photograph from the trip, for the home page to lead with. */
+  /** How many public trips there are — what the index promises. */
+  tripCount: number;
+  /** Summed across every public trip, for the headline numbers. */
+  totals: TripStats;
+  /** One trip to offer directly, as a shortcut past the index. */
+  featured: { name: string; slug: string } | null;
+  /** A photograph from the featured trip, for the home page to lead with. */
   hero: ShowcasePhoto | null;
 }
 
 /**
- * The trip the home page advertises.
+ * What the home page advertises: the whole collection, plus one way in.
  *
- * The most recently created public one, which for now is the Rome demo. The
- * hero photograph is picked from what that trip actually contains rather than
- * being a separate asset — the point of the page is to show what the thing
- * produces, so the picture at the top should be one of its own.
+ * The counts are totals across every public trip, because the page now leads
+ * to an index rather than to a single journey and quoting one trip's numbers
+ * under a link to all of them would be a lie. The hero photograph still comes
+ * from the featured trip's own photographs rather than being a separate asset
+ * — the point of the page is to show what the thing produces.
  */
 export async function getShowcase(): Promise<Showcase | null> {
   try {
@@ -204,18 +209,27 @@ export async function getShowcase(): Promise<Showcase | null> {
 }
 
 async function loadShowcase(): Promise<Showcase | null> {
-  const trip = await prisma.trip.findFirst({
+  const trips = await prisma.trip.findMany({
     where: { isPublic: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ startDate: "desc" }, { name: "asc" }],
     select: { id: true, name: true, slug: true, utcOffsetMinutes: true },
   });
 
-  if (!trip) return null;
+  if (trips.length === 0) return null;
 
-  const [stats, candidates] = await Promise.all([
-    getTripStats(trip.id, trip.utcOffsetMinutes),
+  // The named trip when it exists, and the most recent otherwise — a
+  // deployment that never seeded Rome should still get a working link.
+  const featured =
+    trips.find((trip) => trip.slug === FEATURED_TRIP_SLUG) ?? trips[0];
+
+  if (featured === undefined) return null;
+
+  const [perTrip, candidates] = await Promise.all([
+    Promise.all(
+      trips.map((trip) => getTripStats(trip.id, trip.utcOffsetMinutes)),
+    ),
     prisma.photo.findMany({
-      where: { tripId: trip.id, visitId: { not: null } },
+      where: { tripId: featured.id, visitId: { not: null } },
       // Widest first, so the hero is a photograph that can carry a full-bleed
       // backdrop rather than one that has to be stretched to fill it.
       orderBy: [{ width: "desc" }, { id: "asc" }],
@@ -232,6 +246,19 @@ async function loadShowcase(): Promise<Showcase | null> {
     }),
   ]);
 
+  // Days are summed rather than de-duplicated across trips: two journeys in
+  // different months share no calendar days, and the number the page wants is
+  // "days spent travelling", not "distinct dates in the database".
+  const totals = perTrip.reduce<TripStats>(
+    (sum, stats) => ({
+      placeCount: sum.placeCount + stats.placeCount,
+      photoCount: sum.photoCount + stats.photoCount,
+      visitCount: sum.visitCount + stats.visitCount,
+      dayCount: sum.dayCount + stats.dayCount,
+    }),
+    { placeCount: 0, photoCount: 0, visitCount: 0, dayCount: 0 },
+  );
+
   // Landscape only. A portrait photograph behind a full-width hero has to be
   // cropped so hard that whatever it was of is lost.
   const chosen =
@@ -240,9 +267,9 @@ async function loadShowcase(): Promise<Showcase | null> {
     null;
 
   return {
-    name: trip.name,
-    slug: trip.slug,
-    stats,
+    tripCount: trips.length,
+    totals,
+    featured: { name: featured.name, slug: featured.slug },
     hero:
       chosen === null
         ? null
@@ -256,6 +283,168 @@ async function loadShowcase(): Promise<Showcase | null> {
             placeName: chosen.visit?.place.name ?? null,
           },
   };
+}
+
+/** One card on the trips index. */
+export interface TripSummary {
+  id: string;
+  name: string;
+  slug: string;
+  /**
+   * The span actually photographed, falling back to the trip's stored dates
+   * for a trip with no visits. Same reasoning as `photographedRange`: the
+   * stored dates are local midnights held as UTC instants, and rendering one
+   * back can land a day early.
+   */
+  start: Date;
+  end: Date;
+  utcOffsetMinutes: number;
+  stats: TripStats;
+  /** The photograph the card leads with, or null for an unclustered trip. */
+  cover: ShowcasePhoto | null;
+}
+
+/**
+ * Every public trip, newest first, with the numbers and cover a card needs.
+ *
+ * Ordered by `startDate` rather than `createdAt`: the index is a shelf of
+ * journeys, and a reader scanning it is looking for when the traveller went,
+ * not when the row was written. Seeding all four cities in one run would make
+ * `createdAt` an accident of alphabetical order.
+ *
+ * Deliberately a fixed number of queries rather than one per trip: places,
+ * photo counts and visits are each fetched once for the whole set and grouped
+ * in memory. Only the covers cost a query apiece, and that is bounded by how
+ * many trips exist.
+ */
+export async function getTripsIndex(): Promise<TripSummary[]> {
+  const trips = await prisma.trip.findMany({
+    where: { isPublic: true },
+    orderBy: [{ startDate: "desc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      startDate: true,
+      endDate: true,
+      utcOffsetMinutes: true,
+    },
+  });
+
+  if (trips.length === 0) return [];
+
+  const tripIds = trips.map((trip) => trip.id);
+
+  const [places, photoCounts, visits] = await Promise.all([
+    prisma.place.findMany({
+      where: { tripId: { in: tripIds } },
+      // Densest place first, so the head of each trip's group is the one whose
+      // photographs the cover comes from.
+      orderBy: [{ photoCount: "desc" }, { id: "asc" }],
+      select: { id: true, tripId: true, name: true },
+    }),
+    prisma.photo.groupBy({
+      by: ["tripId"],
+      where: { tripId: { in: tripIds } },
+      _count: { _all: true },
+    }),
+    prisma.visit.findMany({
+      where: { place: { tripId: { in: tripIds } } },
+      select: {
+        arrivedAt: true,
+        departedAt: true,
+        place: { select: { tripId: true } },
+      },
+    }),
+  ]);
+
+  const placesByTrip = new Map<string, { id: string; name: string }[]>();
+  for (const place of places) {
+    const group = placesByTrip.get(place.tripId) ?? [];
+    group.push({ id: place.id, name: place.name });
+    placesByTrip.set(place.tripId, group);
+  }
+
+  const photosByTrip = new Map(
+    photoCounts.map((row) => [row.tripId, row._count._all]),
+  );
+
+  const visitsByTrip = new Map<string, { arrivedAt: Date; departedAt: Date }[]>();
+  for (const visit of visits) {
+    const group = visitsByTrip.get(visit.place.tripId) ?? [];
+    group.push({ arrivedAt: visit.arrivedAt, departedAt: visit.departedAt });
+    visitsByTrip.set(visit.place.tripId, group);
+  }
+
+  return await Promise.all(
+    trips.map(async (trip) => {
+      const tripPlaces = placesByTrip.get(trip.id) ?? [];
+      const tripVisits = visitsByTrip.get(trip.id) ?? [];
+
+      const days = new Set(
+        tripVisits.map((visit) =>
+          tripDayKey(visit.arrivedAt, trip.utcOffsetMinutes),
+        ),
+      );
+
+      const arrivals = tripVisits.map((visit) => visit.arrivedAt.getTime());
+      const departures = tripVisits.map((visit) => visit.departedAt.getTime());
+
+      return {
+        id: trip.id,
+        name: trip.name,
+        slug: trip.slug,
+        start:
+          arrivals.length > 0 ? new Date(Math.min(...arrivals)) : trip.startDate,
+        end:
+          departures.length > 0 ? new Date(Math.max(...departures)) : trip.endDate,
+        utcOffsetMinutes: trip.utcOffsetMinutes,
+        stats: {
+          placeCount: tripPlaces.length,
+          photoCount: photosByTrip.get(trip.id) ?? 0,
+          visitCount: tripVisits.length,
+          dayCount: days.size,
+        },
+        cover: await coverPhoto(tripPlaces[0] ?? null),
+      };
+    }),
+  );
+}
+
+/**
+ * The widest landscape photograph belonging to a place.
+ *
+ * Widest because a card's cover is a letterbox and a narrow original has to be
+ * upscaled to fill it; landscape because a portrait photograph in that box is
+ * cropped to a vertical slice of itself. The check is done in JavaScript over
+ * the widest few rather than in SQL, because the comparison is between two
+ * columns of the same row and the candidate set is tiny either way.
+ */
+async function coverPhoto(
+  place: { id: string; name: string } | null,
+): Promise<ShowcasePhoto | null> {
+  if (place === null) return null;
+
+  const candidates = await prisma.photo.findMany({
+    where: { visit: { placeId: place.id } },
+    orderBy: [{ width: "desc" }, { id: "asc" }],
+    take: 24,
+    select: {
+      url: true,
+      width: true,
+      height: true,
+      blurhash: true,
+      photographerName: true,
+      photographerUrl: true,
+    },
+  });
+
+  const chosen =
+    candidates.find((photo) => photo.width > photo.height * 1.3) ??
+    candidates[0] ??
+    null;
+
+  return chosen === null ? null : { ...chosen, placeName: place.name };
 }
 
 /**

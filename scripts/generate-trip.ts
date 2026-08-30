@@ -1,34 +1,39 @@
 /**
  * Synthetic trip generator.
  *
- *   npx tsx scripts/generate-trip.ts
- *   npx tsx scripts/generate-trip.ts --seed 7 --sigma 30 --out data/rome-trip.json
+ *   npx tsx scripts/generate-trip.ts --city rome
+ *   npx tsx scripts/generate-trip.ts --city athens --seed 7
  *
  * Produces a photo dataset shaped like a real camera roll after a week in a
  * city, together with the ground truth — which photo was really taken at which
  * place — so clustering accuracy can be scored against it later.
  *
- * What makes the dataset hard, on purpose:
+ * The itinerary comes from `data/itineraries/<city>.json`: real coordinates,
+ * intended visit durations, per-place GPS spread and photo counts. The dataset
+ * lands in `data/<city>-trip.json`.
+ *
+ * What makes these datasets hard, on purpose — and each itinerary leans on
+ * these differently, so the cities are not four copies of one trip:
  *
  *  - Gaussian GPS noise around each place, with a per-place sigma. A café gets
- *    8m; a hillside archaeological site gets 55m.
- *  - Two places 90m apart (the Pantheon and the café on the next piazza), which
- *    a naive distance threshold will merge.
+ *    8m; a hillside archaeological site gets 95m.
+ *  - Places close enough to merge: the Pantheon and a café 100m away in Rome,
+ *    the Boqueria 65m off La Rambla in Barcelona, the Parthenon 88m inside the
+ *    Acropolis in Athens.
  *  - Sparse photos strung along the route between consecutive stops, which
  *    belong to no cluster at all.
- *  - ~15% of photos carry no coordinates, so their place has to be recovered
- *    from timestamps alone.
- *  - Two revisits: the same café on Monday and Thursday, the same square on
- *    Tuesday night and Friday afternoon. One place, two visits — clustering on
- *    position alone will collapse them.
- *  - Two genuine outliers, day trips 25-30km outside the city, which must not
- *    be absorbed into the nearest cluster.
+ *  - Photos carrying no coordinates, so their place has to be recovered from
+ *    timestamps alone.
+ *  - Revisits — one place, two visits — which clustering on position alone
+ *    will collapse.
+ *  - Genuine outliers, day trips well outside the city, which must not be
+ *    absorbed into the nearest cluster.
  *
  * Everything is driven by a seeded PRNG, so the same seed always produces the
  * same dataset and accuracy numbers stay comparable between runs.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -58,7 +63,16 @@ const DEFAULT_GPS_STRIP_RATE = 0.15;
 
 const DEFAULT_SEED = 42;
 
-const DEFAULT_OUT = "data/rome-trip.json";
+/** Where itineraries live, one JSON file per city. */
+const ITINERARY_DIR = "data/itineraries";
+
+/** The city generated when none is named. */
+const DEFAULT_CITY = "rome";
+
+/** Datasets are written per city, alongside the itineraries they came from. */
+function datasetPathFor(city: string): string {
+  return `data/${city}-trip.json`;
+}
 
 const DEFAULT_CLOUD_NAME = "roam-demo";
 
@@ -78,7 +92,6 @@ const TRANSIT_MAX_PHOTOS = 3;
 const BLURHASH_MISSING_RATE = 0.08;
 
 const MINUTE_MS = 60_000;
-const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 // ---------------------------------------------------------------------------
@@ -198,15 +211,14 @@ const BLURHASH_POOL: readonly [string, ...string[]] = [
  * instant.
  *
  * The trip carries a fixed UTC offset rather than an IANA zone so this script
- * stays dependency-free. Rome in May is UTC+2 throughout, so nothing is lost
- * for the built-in itinerary; a trip spanning a DST boundary would need a real
- * timezone library.
+ * stays dependency-free. Each itinerary sits well inside one season, so nothing
+ * is lost; a trip spanning a DST boundary would need a real timezone library.
  */
 function localInstant(
   startDate: string,
   dayOffset: number,
   timeOfDay: string,
-  utcOffsetHours: number,
+  utcOffsetMinutes: number,
 ): number {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
   if (!dateMatch) {
@@ -229,7 +241,7 @@ function localInstant(
       Number(hours),
       Number(minutes),
     ) -
-    utcOffsetHours * HOUR_MS
+    utcOffsetMinutes * MINUTE_MS
   );
 }
 
@@ -273,148 +285,73 @@ function burstTimestamps(
 // ---------------------------------------------------------------------------
 
 /**
- * Five days in Rome, May 2026. Coordinates are the real ones; per-place sigmas
- * reflect how spread out each site actually is — you photograph the Trevi
- * Fountain from one small piazza, but the Forum from anywhere across nine
- * hectares of ruins.
+ * Loads a city's itinerary.
+ *
+ * Itineraries live in `data/itineraries/<slug>.json` rather than in this file:
+ * they are data, several cities' worth of it, and a generator that has to be
+ * edited to add a trip is a generator with a hard-coded trip. The shape is
+ * `TripSpec` — the same one the code below has always taken.
  */
-const ROME_TRIP: TripSpec = {
-  name: "Rome, May 2026",
-  slug: "rome-may-2026",
-  startDate: "2026-05-11",
-  utcOffsetHours: 2,
+function loadItinerary(city: string): TripSpec {
+  const path = resolve(process.cwd(), ITINERARY_DIR, `${city}.json`);
 
-  places: [
-    {
-      key: "pantheon",
-      name: "Pantheon",
-      lat: 41.8986,
-      lng: 12.4769,
-      address: "Piazza della Rotonda, 00186 Roma",
-      sigmaMeters: 18,
-    },
-    {
-      // 90m from the Pantheon: the deliberate near-collision in this dataset.
-      key: "sant-eustachio",
-      name: "Sant'Eustachio Il Caffe",
-      lat: 41.8987,
-      lng: 12.4757,
-      address: "Piazza di Sant'Eustachio 82, 00186 Roma",
-      sigmaMeters: 8,
-    },
-    {
-      key: "piazza-navona",
-      name: "Piazza Navona",
-      lat: 41.8992,
-      lng: 12.4731,
-      address: "Piazza Navona, 00186 Roma",
-      sigmaMeters: 40,
-    },
-    {
-      key: "campo-de-fiori",
-      name: "Campo de' Fiori",
-      lat: 41.8956,
-      lng: 12.4722,
-      address: "Piazza Campo de' Fiori, 00186 Roma",
-      sigmaMeters: 25,
-    },
-    {
-      key: "colosseum",
-      name: "Colosseo",
-      lat: 41.8902,
-      lng: 12.4922,
-      address: "Piazza del Colosseo 1, 00184 Roma",
-      sigmaMeters: 45,
-    },
-    {
-      key: "roman-forum",
-      name: "Foro Romano",
-      lat: 41.8925,
-      lng: 12.4853,
-      address: "Via della Salara Vecchia 5/6, 00186 Roma",
-      sigmaMeters: 60,
-    },
-    {
-      key: "palatine-hill",
-      name: "Palatino",
-      lat: 41.8887,
-      lng: 12.4875,
-      address: "Via di San Gregorio 30, 00186 Roma",
-      sigmaMeters: 55,
-    },
-    {
-      key: "trastevere",
-      name: "Piazza di Santa Maria in Trastevere",
-      lat: 41.8893,
-      lng: 12.4695,
-      address: "Piazza di Santa Maria in Trastevere, 00153 Roma",
-      sigmaMeters: 25,
-    },
-    {
-      key: "vatican-museums",
-      name: "Musei Vaticani",
-      lat: 41.9065,
-      lng: 12.4536,
-      address: "Viale Vaticano, 00165 Roma",
-      sigmaMeters: 35,
-    },
-    {
-      key: "st-peters",
-      name: "Basilica di San Pietro",
-      lat: 41.9022,
-      lng: 12.4539,
-      address: "Piazza San Pietro, 00120 Citta del Vaticano",
-      sigmaMeters: 50,
-    },
-    {
-      key: "castel-santangelo",
-      name: "Castel Sant'Angelo",
-      lat: 41.9031,
-      lng: 12.4663,
-      address: "Lungotevere Castello 50, 00193 Roma",
-      sigmaMeters: 30,
-    },
-    {
-      key: "trevi",
-      name: "Fontana di Trevi",
-      lat: 41.9009,
-      lng: 12.4833,
-      address: "Piazza di Trevi, 00187 Roma",
-      sigmaMeters: 15,
-    },
-  ],
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    const available = availableCities();
+    throw new Error(
+      `No itinerary for "${city}" at ${path}.\n` +
+        `Available: ${available.length > 0 ? available.join(", ") : "none"}`,
+    );
+  }
 
-  visits: [
-    // Day 1 — the centro storico on foot.
-    { placeKey: "pantheon", day: 0, arriveAt: "10:15", durationMinutes: 45, photoCount: 22 },
-    { placeKey: "sant-eustachio", day: 0, arriveAt: "11:10", durationMinutes: 35, photoCount: 9 },
-    { placeKey: "piazza-navona", day: 0, arriveAt: "12:00", durationMinutes: 50, photoCount: 18 },
-    { placeKey: "campo-de-fiori", day: 0, arriveAt: "13:10", durationMinutes: 60, photoCount: 14 },
+  const spec = JSON.parse(raw) as TripSpec;
+  validateItinerary(city, spec);
+  return spec;
+}
 
-    // Day 2 — ancient Rome, then dinner across the river.
-    { placeKey: "colosseum", day: 1, arriveAt: "09:30", durationMinutes: 100, photoCount: 41 },
-    { placeKey: "roman-forum", day: 1, arriveAt: "11:30", durationMinutes: 95, photoCount: 33 },
-    { placeKey: "palatine-hill", day: 1, arriveAt: "13:15", durationMinutes: 70, photoCount: 21 },
-    { placeKey: "trastevere", day: 1, arriveAt: "19:30", durationMinutes: 120, photoCount: 26 },
+/** The city slugs that have an itinerary, read from the directory itself. */
+export function availableCities(): string[] {
+  try {
+    return readdirSync(resolve(process.cwd(), ITINERARY_DIR))
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => file.slice(0, -".json".length))
+      .sort();
+  } catch {
+    return [];
+  }
+}
 
-    // Day 3 — the Vatican.
-    { placeKey: "vatican-museums", day: 2, arriveAt: "08:45", durationMinutes: 180, photoCount: 58 },
-    { placeKey: "st-peters", day: 2, arriveAt: "12:15", durationMinutes: 110, photoCount: 37 },
-    { placeKey: "castel-santangelo", day: 2, arriveAt: "14:40", durationMinutes: 65, photoCount: 19 },
+/**
+ * Checks the parts of an itinerary that would otherwise fail confusingly deep
+ * inside generation — a visit naming a place that does not exist, say.
+ */
+function validateItinerary(city: string, spec: TripSpec): void {
+  const problems: string[] = [];
 
-    // Day 4 — back to the same café, three days on. Revisit #1.
-    { placeKey: "sant-eustachio", day: 3, arriveAt: "09:20", durationMinutes: 30, photoCount: 7 },
-    { placeKey: "trevi", day: 3, arriveAt: "10:10", durationMinutes: 55, photoCount: 29 },
+  if (!spec.name || !spec.slug) problems.push("needs a name and a slug");
+  if (typeof spec.utcOffsetMinutes !== "number") {
+    problems.push("needs utcOffsetMinutes");
+  }
+  if (!Array.isArray(spec.places) || spec.places.length === 0) {
+    problems.push("needs at least one place");
+  }
+  if (!Array.isArray(spec.visits) || spec.visits.length === 0) {
+    problems.push("needs at least one visit");
+  }
 
-    // Day 5 — a long last lunch in Tuesday night's square. Revisit #2.
-    { placeKey: "trastevere", day: 4, arriveAt: "12:30", durationMinutes: 140, photoCount: 31 },
-  ],
+  const keys = new Set((spec.places ?? []).map((place) => place.key));
+  for (const visit of spec.visits ?? []) {
+    if (!keys.has(visit.placeKey)) {
+      problems.push(`visit refers to unknown place "${visit.placeKey}"`);
+    }
+  }
 
-  outliers: [
-    { name: "Ostia Antica", lat: 41.7556, lng: 12.2917, day: 3, takenAt: "16:40" },
-    { name: "Villa d'Este, Tivoli", lat: 41.9631, lng: 12.7958, day: 4, takenAt: "09:05" },
-  ],
-};
+  if (problems.length > 0) {
+    throw new Error(`${city}.json: ${problems.join("; ")}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Generation
@@ -502,7 +439,7 @@ function generate(spec: TripSpec, options: GeneratorOptions): GeneratedTripDatas
         spec.startDate,
         visitSpec.day,
         visitSpec.arriveAt,
-        spec.utcOffsetHours,
+        spec.utcOffsetMinutes,
       );
 
       return {
@@ -654,7 +591,7 @@ function generate(spec: TripSpec, options: GeneratorOptions): GeneratedTripDatas
 
   for (const outlier of spec.outliers) {
     const draft = makeDraft({
-      takenMs: localInstant(spec.startDate, outlier.day, outlier.takenAt, spec.utcOffsetHours),
+      takenMs: localInstant(spec.startDate, outlier.day, outlier.takenAt, spec.utcOffsetMinutes),
       position: { lat: outlier.lat, lng: outlier.lng },
       origin: "outlier",
       placeId: null,
@@ -711,7 +648,7 @@ function generate(spec: TripSpec, options: GeneratorOptions): GeneratedTripDatas
     photosByOrigin[assignment.origin] += 1;
   }
 
-  const tripStartMs = localInstant(spec.startDate, 0, "00:00", spec.utcOffsetHours);
+  const tripStartMs = localInstant(spec.startDate, 0, "00:00", spec.utcOffsetMinutes);
   const lastPhoto = photos.at(-1);
   const tripEndMs = lastPhoto?.takenAt
     ? new Date(lastPhoto.takenAt).getTime()
@@ -735,6 +672,7 @@ function generate(spec: TripSpec, options: GeneratorOptions): GeneratedTripDatas
       slug: spec.slug,
       startDate: toIso(tripStartMs),
       endDate: toIso(tripEndMs),
+      utcOffsetMinutes: spec.utcOffsetMinutes,
     },
     photos,
     groundTruth: {
@@ -750,9 +688,12 @@ function generate(spec: TripSpec, options: GeneratorOptions): GeneratedTripDatas
 // ---------------------------------------------------------------------------
 
 const USAGE = `
-Usage: tsx scripts/generate-trip.ts [options]
+Usage: tsx scripts/generate-trip.ts --city <slug> [options]
 
-  --out <path>          Where to write the dataset  (default: ${DEFAULT_OUT})
+  --city <slug>         Itinerary to generate from ${ITINERARY_DIR}
+                                                    (default: ${DEFAULT_CITY})
+  --out <path>          Where to write the dataset
+                                                    (default: data/<slug>-trip.json)
   --seed <int>          PRNG seed                   (default: ${DEFAULT_SEED})
   --sigma <metres>      Default GPS noise sigma for places that do not set
                         their own                   (default: ${DEFAULT_SIGMA_METERS})
@@ -781,6 +722,7 @@ function parseNumber(
 function main(): void {
   const { values } = parseArgs({
     options: {
+      city: { type: "string" },
       out: { type: "string" },
       seed: { type: "string" },
       sigma: { type: "string" },
@@ -813,9 +755,10 @@ function main(): void {
     cloudName: values["cloud-name"] ?? DEFAULT_CLOUD_NAME,
   };
 
-  const dataset = generate(ROME_TRIP, options);
+  const city = values.city ?? DEFAULT_CITY;
+  const dataset = generate(loadItinerary(city), options);
 
-  const outPath = resolve(process.cwd(), values.out ?? DEFAULT_OUT);
+  const outPath = resolve(process.cwd(), values.out ?? datasetPathFor(city));
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, `${JSON.stringify(dataset, null, 2)}\n`, "utf8");
 
@@ -855,5 +798,5 @@ if (invokedDirectly) {
   }
 }
 
-export { DEFAULT_SIGMA_METERS, generate, ROME_TRIP };
+export { DEFAULT_SIGMA_METERS, generate, loadItinerary };
 export type { GeneratorOptions };

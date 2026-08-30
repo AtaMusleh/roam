@@ -130,21 +130,37 @@ export default async function Home() {
           </p>
 
           {showcase !== null && (
-            <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <Link
-                href={`/${showcase.slug}`}
-                className="group inline-flex items-center justify-center gap-2 rounded-full bg-roam-accent px-6 py-3 text-sm font-semibold text-roam-accent-foreground transition-colors hover:brightness-110 focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-              >
-                Open the {showcase.name} demo
-                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-              </Link>
+            <>
+              <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
+                <Link
+                  href="/trips"
+                  className="group inline-flex items-center justify-center gap-2 rounded-full bg-roam-accent px-6 py-3 text-sm font-semibold text-roam-accent-foreground transition-colors hover:brightness-110 focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                >
+                  {showcase.tripCount === 1
+                    ? "See the trip"
+                    : `See all ${showcase.tripCount} trips`}
+                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                </Link>
 
-              <p className="text-sm text-muted-foreground tabular-nums">
-                {showcase.stats.photoCount} photographs &middot;{" "}
-                {showcase.stats.placeCount} places &middot;{" "}
-                {showcase.stats.dayCount} days
+                {/* A shortcut straight into the trip the rest of this was built
+                    against, for a reader who would rather not choose first. */}
+                {showcase.featured !== null && (
+                  <Link
+                    href={`/${showcase.featured.slug}`}
+                    className="text-sm font-medium text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground hover:decoration-roam-accent focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                  >
+                    or open {showcase.featured.name} directly
+                  </Link>
+                )}
+              </div>
+
+              <p className="mt-5 text-sm text-muted-foreground tabular-nums">
+                {showcase.totals.photoCount.toLocaleString("en-GB")} photographs
+                &middot; {showcase.totals.placeCount} places &middot;{" "}
+                {showcase.totals.dayCount} days &middot; {showcase.tripCount}{" "}
+                {showcase.tripCount === 1 ? "trip" : "trips"}
               </p>
-            </div>
+            </>
           )}
         </div>
 

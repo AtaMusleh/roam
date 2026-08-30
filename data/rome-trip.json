@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generatedAt": "2026-08-29T13:28:41.474Z",
+    "generatedAt": "2026-08-30T06:33:53.894Z",
     "seed": 42,
     "defaultSigmaMeters": 20,
     "gpsStripRate": 0.15,
@@ -19,7 +19,8 @@
     "name": "Rome, May 2026",
     "slug": "rome-may-2026",
     "startDate": "2026-05-10T22:00:00.000Z",
-    "endDate": "2026-05-15T12:39:01.451Z"
+    "endDate": "2026-05-15T12:39:01.451Z",
+    "utcOffsetMinutes": 120
   },
   "photos": [
     {

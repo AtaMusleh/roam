@@ -52,6 +52,20 @@ export interface UnsplashPhoto {
   description: string | null;
 }
 
+/**
+ * Thrown when Unsplash refuses on quota grounds.
+ *
+ * Distinguished from other failures so a caller partway through a long fetch
+ * can stop and keep what it has, rather than throwing away an hour of budget
+ * because the last request of fifty came back empty-handed.
+ */
+export class UnsplashRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnsplashRateLimitError";
+  }
+}
+
 export interface UnsplashSearchResult {
   photos: UnsplashPhoto[];
   /** Requests left in this hour, as reported by Unsplash. */
@@ -216,7 +230,7 @@ export async function searchPhotos({
     if (headerRemaining !== null) remaining = Number(headerRemaining);
 
     if (response.status === 403) {
-      throw new Error(
+      throw new UnsplashRateLimitError(
         "Unsplash refused the request: the hourly rate limit is spent, or the access key is wrong.",
       );
     }

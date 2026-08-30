@@ -1,16 +1,23 @@
 /**
- * Builds the demo trip's photography cache from Unsplash.
+ * Builds a trip's photography cache from Unsplash.
  *
- *   UNSPLASH_ACCESS_KEY=... npx tsx scripts/fetch-unsplash.ts
+ *   UNSPLASH_ACCESS_KEY=... npx tsx scripts/fetch-unsplash.ts --city rome
  *
  * Searches Unsplash once per place per orientation, and writes the results to
- * `data/unsplash-rome.json`. That file is committed, so `seed-demo-trip.ts`
+ * `data/unsplash-<city>.json`. Those files are committed, so `seed-demo-trip.ts`
  * produces the same demo on any machine with no key and no network — which is
- * the point of caching it rather than fetching at seed time.
+ * the point of caching them rather than fetching at seed time.
  *
- * Re-running is only necessary when the itinerary changes or the cache is
- * deleted. The free tier allows fifty requests an hour; a full run of the Rome
- * itinerary costs about twenty-four.
+ * Re-running is only necessary when an itinerary changes or a cache is deleted.
+ *
+ * ## The budget, and why this writes what it has
+ *
+ * The demo tier allows fifty requests an hour, and one city costs roughly
+ * twenty-five. Four cities therefore cannot be fetched in one sitting. When the
+ * budget runs out mid-run the buckets filled so far are still written, with the
+ * ones left untouched simply absent — the seed borrows from the nearest covered
+ * place for those. Re-running an hour later fills in the rest, merging into the
+ * cache already on disk rather than starting again from nothing.
  *
  * Get a key by registering an application at https://unsplash.com/developers.
  */
@@ -18,23 +25,34 @@
 // Must stay first: it populates the environment before anything reads it.
 import "./load-env";
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import {
   GENERAL_BUCKET,
-  GENERAL_QUERY,
   bucketQuery,
+  generalQuery,
   orientationOf,
 } from "../src/lib/unsplash-cache";
 import type { UnsplashCache, UnsplashCacheBucket } from "../src/lib/unsplash-cache";
-import { searchPhotos } from "../src/lib/unsplash";
-import type { Orientation, UnsplashPhoto } from "../src/lib/unsplash";
+import { UnsplashRateLimitError, searchPhotos } from "../src/lib/unsplash";
+import type {
+  Orientation,
+  UnsplashPhoto,
+  UnsplashSearchResult,
+} from "../src/lib/unsplash";
 import type { GeneratedTripDataset } from "../src/types";
 
-const DEFAULT_DATA = "data/rome-trip.json";
-const DEFAULT_OUT = "data/unsplash-rome.json";
+const DEFAULT_CITY = "rome";
+
+function datasetPathFor(city: string): string {
+  return `data/${city}-trip.json`;
+}
+
+function cachePathFor(city: string): string {
+  return `data/unsplash-${city}.json`;
+}
 
 /** Ceiling per place per orientation, so one big place cannot eat the budget. */
 const MAX_PER_BUCKET = 40;
@@ -43,7 +61,7 @@ const MAX_PER_BUCKET = 40;
  * Broader searches to fall back on when a place's own name finds too little.
  *
  * A place name is the best query when it works, and useless when it does not.
- * Measured against the first full fetch:
+ * Measured against the first full Rome fetch:
  *
  *  - "Sant'Eustachio Il Caffe Rome" returned **nothing**. It is a real café and
  *    a famous one, but the apostrophe and the exact trading name find no
@@ -55,20 +73,68 @@ const MAX_PER_BUCKET = 40;
  *
  * Between them those three left 73 photographs with no picture. Each falls back
  * to something a photographer would plausibly have tagged.
+ *
+ * Keyed by place key, which is unique across itineraries, so one table serves
+ * every city. The entries below Rome's are for the same failure modes in the
+ * other three: a neighbourhood whose name is a local word rather than a tag
+ * (Anafiotika, Bunkers del Carmel), a route rather than a building (Tram 28),
+ * and names carrying diacritics that thin the results out (Barri Gòtic,
+ * Montjuïc). A fallback only runs when the ones before it came up short, so
+ * listing one for a place that turns out fine costs nothing.
  */
 const FALLBACK_QUERIES: Readonly<Record<string, readonly string[]>> = {
+  // Rome
   "sant-eustachio": ["Rome cafe", "Italian espresso bar"],
   trastevere: ["Trastevere Rome", "Trastevere street"],
   "roman-forum": ["Roman Forum ruins", "Ancient Rome ruins"],
+
+  // Barcelona
+  "bunkers-del-carmel": ["Barcelona viewpoint", "Barcelona skyline"],
+  "gothic-quarter": ["Gothic Quarter Barcelona", "Barcelona old town"],
+  montjuic: ["Montjuic Barcelona", "Barcelona hill view"],
+  barceloneta: ["Barceloneta beach", "Barcelona beach"],
+  "mercat-boqueria": ["Boqueria market", "Barcelona market"],
+
+  // Lisbon
+  "tram-28": ["Lisbon tram", "yellow tram Lisbon"],
+  "senhora-do-monte": ["Lisbon viewpoint", "Lisbon miradouro"],
+  "time-out-market": ["Lisbon market", "Lisbon food market"],
+  "lx-factory": ["Lisbon street art", "Lisbon industrial"],
+  "padrao-descobrimentos": ["Belem Lisbon", "Lisbon monument"],
+  jeronimos: ["Jeronimos Monastery", "Belem Lisbon"],
+
+  // Athens
+  anafiotika: ["Plaka Athens", "Athens old town"],
+  monastiraki: ["Monastiraki Athens", "Athens flea market"],
+  "national-archaeological-museum": ["Athens museum", "Greek sculpture"],
+  "temple-olympian-zeus": ["Temple of Zeus Athens", "Athens ruins"],
+  lycabettus: ["Athens viewpoint", "Athens skyline"],
+  syntagma: ["Syntagma Athens", "Athens square"],
 };
 
 const USAGE = `
 Usage: UNSPLASH_ACCESS_KEY=... tsx scripts/fetch-unsplash.ts [options]
 
-  --data <path>   Dataset to read the itinerary from  (default: ${DEFAULT_DATA})
-  --out <path>    Cache file to write                 (default: ${DEFAULT_OUT})
+  --city <slug>   Which city to fetch for            (default: ${DEFAULT_CITY})
+  --data <path>   Dataset to read the itinerary from (default: data/<slug>-trip.json)
+  --out <path>    Cache file to write               (default: data/unsplash-<slug>.json)
+  --refetch       Re-search buckets the cache already has
   --help          Show this message
 `.trimStart();
+
+/**
+ * Reads the buckets already in a cache file, or none if there is no file yet.
+ *
+ * A run cut short by the hourly limit leaves a partial cache behind. Reading it
+ * back means the next run picks up where that one stopped rather than spending
+ * its first twenty requests re-fetching what is already on disk.
+ */
+function readExistingBuckets(path: string): Record<string, UnsplashCacheBucket> {
+  if (!existsSync(path)) return {};
+
+  const cache = JSON.parse(readFileSync(path, "utf8")) as UnsplashCache;
+  return { ...cache.buckets };
+}
 
 /** How many landscape and portrait photographs each place needs. */
 function countByOrientation(
@@ -102,8 +168,10 @@ function countByOrientation(
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
+      city: { type: "string" },
       data: { type: "string" },
       out: { type: "string" },
+      refetch: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
     strict: true,
@@ -124,7 +192,8 @@ async function main(): Promise<void> {
     );
   }
 
-  const dataPath = resolve(process.cwd(), values.data ?? DEFAULT_DATA);
+  const city = values.city ?? DEFAULT_CITY;
+  const dataPath = resolve(process.cwd(), values.data ?? datasetPathFor(city));
   const dataset = JSON.parse(
     readFileSync(dataPath, "utf8"),
   ) as GeneratedTripDataset;
@@ -134,21 +203,31 @@ async function main(): Promise<void> {
   );
 
   const counts = countByOrientation(dataset);
-  const buckets: Record<string, UnsplashCacheBucket> = {};
+  const outPath = resolve(process.cwd(), values.out ?? cachePathFor(city));
+  const buckets = values.refetch ? {} : readExistingBuckets(outPath);
 
   const out = (text = ""): void => {
     process.stdout.write(`${text}\n`);
   };
 
-  out(`Fetching photography for ${counts.size} buckets`);
+  const already = Object.keys(buckets).filter((key) => counts.has(key)).length;
+
+  out(
+    `Fetching photography for ${city}: ${counts.size} buckets` +
+      (already === 0 ? "" : `, ${already} already cached`),
+  );
 
   let remaining: number | null = null;
+  /** Set when Unsplash refuses on quota grounds, to stop and keep what we have. */
+  let exhausted = false;
 
   for (const [key, needed] of counts) {
+    if (key in buckets) continue;
+
     const query =
       key === GENERAL_BUCKET
-        ? GENERAL_QUERY
-        : bucketQuery(nameByKey.get(key) ?? key);
+        ? generalQuery(city)
+        : bucketQuery(nameByKey.get(key) ?? key, city);
 
     const wanted: Record<Orientation, number> = {
       landscape: Math.min(needed.landscape, MAX_PER_BUCKET),
@@ -173,12 +252,21 @@ async function main(): Promise<void> {
       for (const attempt of queries) {
         if (collected.size >= wanted[orientation]) break;
 
-        const result = await searchPhotos({
-          query: attempt,
-          orientation,
-          count: wanted[orientation] - collected.size,
-          accessKey,
-        });
+        let result: UnsplashSearchResult;
+
+        try {
+          result = await searchPhotos({
+            query: attempt,
+            orientation,
+            count: wanted[orientation] - collected.size,
+            accessKey,
+          });
+        } catch (error) {
+          // Anything else is a real failure and should stop the run loudly.
+          if (!(error instanceof UnsplashRateLimitError)) throw error;
+          exhausted = true;
+          break;
+        }
 
         for (const photo of result.photos) collected.set(photo.id, photo);
         remaining = result.remaining;
@@ -193,6 +281,19 @@ async function main(): Promise<void> {
       }
 
       bucket[orientation] = [...collected.values()];
+      if (exhausted) break;
+    }
+
+    // A bucket interrupted halfway is thrown away rather than cached. Caching it
+    // would make the next run skip it as done, leaving the place permanently
+    // short of photographs to save the handful of requests already spent on it.
+    if (exhausted) {
+      out(
+        `  ${query.padEnd(34)} interrupted — the hourly limit is spent.\n` +
+          `    ${Object.keys(buckets).length} of ${counts.size} buckets cached; ` +
+          "re-run in an hour to fetch the rest.",
+      );
+      break;
     }
 
     bucket.queries = queries.filter((candidate) => used.has(candidate));
@@ -227,7 +328,6 @@ async function main(): Promise<void> {
     buckets,
   };
 
-  const outPath = resolve(process.cwd(), values.out ?? DEFAULT_OUT);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
 
@@ -236,9 +336,18 @@ async function main(): Promise<void> {
     0,
   );
 
+  const missing = [...counts.keys()].filter((key) => !(key in buckets));
+
   out();
   out(`Wrote ${outPath}`);
   out(`  ${total} photographs across ${Object.keys(buckets).length} buckets`);
+
+  if (missing.length > 0) {
+    out(`  ${missing.length} bucket(s) still unfetched: ${missing.join(", ")}`);
+    out("  Re-run once the hourly budget refreshes; the cache is merged into.");
+  }
+
+  if (remaining !== null) out(`  ${remaining} requests left this hour`);
   out("  Commit this file so the demo seeds without a key.");
 }
 

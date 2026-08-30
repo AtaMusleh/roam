@@ -1,0 +1,207 @@
+{
+  "name": "Lisbon, March 2026",
+  "slug": "lisbon-march-2026",
+  "startDate": "2026-03-09",
+  "utcOffsetMinutes": 0,
+  "places": [
+    {
+      "key": "belem-tower",
+      "name": "Torre de Belém",
+      "lat": 38.6916,
+      "lng": -9.216,
+      "address": "Av. Brasília, 1400-038 Lisboa",
+      "sigmaMeters": 40
+    },
+    {
+      "key": "jeronimos",
+      "name": "Mosteiro dos Jerónimos",
+      "lat": 38.6979,
+      "lng": -9.2065,
+      "address": "Praça do Império 1400-206 Lisboa",
+      "sigmaMeters": 50
+    },
+    {
+      "key": "padrao-descobrimentos",
+      "name": "Padrão dos Descobrimentos",
+      "lat": 38.6936,
+      "lng": -9.2058,
+      "address": "Av. Brasília, 1400-038 Lisboa",
+      "sigmaMeters": 25
+    },
+    {
+      "key": "alfama",
+      "name": "Alfama",
+      "lat": 38.7118,
+      "lng": -9.1288,
+      "address": "Alfama, 1100 Lisboa",
+      "sigmaMeters": 80
+    },
+    {
+      "key": "praca-comercio",
+      "name": "Praça do Comércio",
+      "lat": 38.7076,
+      "lng": -9.1365,
+      "address": "Praça do Comércio, 1100-148 Lisboa",
+      "sigmaMeters": 55
+    },
+    {
+      "key": "senhora-do-monte",
+      "name": "Miradouro da Senhora do Monte",
+      "lat": 38.7185,
+      "lng": -9.1332,
+      "address": "Largo Monte, 1170-253 Lisboa",
+      "sigmaMeters": 22
+    },
+    {
+      "key": "time-out-market",
+      "name": "Time Out Market",
+      "lat": 38.7071,
+      "lng": -9.1459,
+      "address": "Av. 24 de Julho 49, 1200-479 Lisboa",
+      "sigmaMeters": 18
+    },
+    {
+      "key": "lx-factory",
+      "name": "LX Factory",
+      "lat": 38.7026,
+      "lng": -9.1782,
+      "address": "R. Rodrigues de Faria 103, 1300-501 Lisboa",
+      "sigmaMeters": 35
+    },
+    {
+      "key": "bairro-alto",
+      "name": "Bairro Alto",
+      "lat": 38.7133,
+      "lng": -9.1462,
+      "address": "Bairro Alto, 1200 Lisboa",
+      "sigmaMeters": 65
+    },
+    {
+      "key": "tram-28",
+      "name": "Tram 28",
+      "lat": 38.7124,
+      "lng": -9.1345,
+      "address": "Rua da Graça, 1170 Lisboa",
+      "sigmaMeters": 110
+    }
+  ],
+  "visits": [
+    {
+      "placeKey": "belem-tower",
+      "day": 0,
+      "arriveAt": "10:05",
+      "durationMinutes": 70,
+      "photoCount": 31
+    },
+    {
+      "placeKey": "padrao-descobrimentos",
+      "day": 0,
+      "arriveAt": "11:35",
+      "durationMinutes": 45,
+      "photoCount": 18
+    },
+    {
+      "placeKey": "jeronimos",
+      "day": 0,
+      "arriveAt": "12:45",
+      "durationMinutes": 105,
+      "photoCount": 43
+    },
+
+    {
+      "placeKey": "praca-comercio",
+      "day": 1,
+      "arriveAt": "09:50",
+      "durationMinutes": 60,
+      "photoCount": 25
+    },
+    {
+      "placeKey": "alfama",
+      "day": 1,
+      "arriveAt": "11:20",
+      "durationMinutes": 145,
+      "photoCount": 54
+    },
+    {
+      "placeKey": "tram-28",
+      "day": 1,
+      "arriveAt": "14:20",
+      "durationMinutes": 50,
+      "photoCount": 16
+    },
+    {
+      "placeKey": "senhora-do-monte",
+      "day": 1,
+      "arriveAt": "18:40",
+      "durationMinutes": 55,
+      "photoCount": 21
+    },
+
+    {
+      "placeKey": "lx-factory",
+      "day": 2,
+      "arriveAt": "11:10",
+      "durationMinutes": 120,
+      "photoCount": 37
+    },
+    {
+      "placeKey": "time-out-market",
+      "day": 2,
+      "arriveAt": "14:00",
+      "durationMinutes": 80,
+      "photoCount": 23
+    },
+    {
+      "placeKey": "bairro-alto",
+      "day": 2,
+      "arriveAt": "20:15",
+      "durationMinutes": 130,
+      "photoCount": 29
+    },
+
+    {
+      "placeKey": "tram-28",
+      "day": 3,
+      "arriveAt": "10:30",
+      "durationMinutes": 65,
+      "photoCount": 14
+    },
+    {
+      "placeKey": "senhora-do-monte",
+      "day": 3,
+      "arriveAt": "12:20",
+      "durationMinutes": 40,
+      "photoCount": 12
+    },
+    {
+      "placeKey": "alfama",
+      "day": 3,
+      "arriveAt": "15:00",
+      "durationMinutes": 95,
+      "photoCount": 27
+    },
+    {
+      "placeKey": "time-out-market",
+      "day": 3,
+      "arriveAt": "19:30",
+      "durationMinutes": 70,
+      "photoCount": 15
+    }
+  ],
+  "outliers": [
+    {
+      "name": "Sintra",
+      "lat": 38.7876,
+      "lng": -9.3904,
+      "day": 2,
+      "takenAt": "08:20"
+    },
+    {
+      "name": "Cabo da Roca",
+      "lat": 38.7805,
+      "lng": -9.4989,
+      "day": 3,
+      "takenAt": "07:55"
+    }
+  ]
+}
