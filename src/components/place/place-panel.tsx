@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, useReducedMotion } from "motion/react";
 import { X } from "lucide-react";
 
 import { PhotoGrid } from "@/components/photo-grid";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { formatLatLng, formatTripDay, formatTripTime, pluralise } from "@/lib/format";
+import { DURATION, EASE_OUT } from "@/lib/motion";
 import type { TripPlace } from "@/lib/queries";
 
 interface PlacePanelProps {
@@ -206,6 +208,7 @@ export function PlacePanel({
   onClose,
 }: PlacePanelProps) {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const reduced = useReducedMotion();
 
   if (place === null) return null;
 
@@ -254,8 +257,15 @@ export function PlacePanel({
   }
 
   return (
-    <aside
+    // Slides in from the edge it is anchored to. There is no matching exit:
+    // closing this is something the reader asked for, and an animation on the
+    // way out is time between asking and getting.
+    <motion.aside
+      key={place.id}
       aria-label={`About ${place.name}`}
+      initial={reduced === true ? false : { opacity: 0, x: -24 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: DURATION.base, ease: EASE_OUT }}
       className="absolute inset-y-4 left-4 z-10 flex w-[21rem] flex-col overflow-hidden rounded-xl border border-border/60 bg-background/95 shadow-2xl backdrop-blur-sm"
     >
       <div className="flex items-start justify-between gap-2 border-b border-border/60 p-4">
@@ -273,13 +283,13 @@ export function PlacePanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <PlaceDetail
-              place={place}
-              places={places}
-              utcOffsetMinutes={utcOffsetMinutes}
-              canEdit={canEdit}
-              onClose={onClose}
-            />
+          place={place}
+          places={places}
+          utcOffsetMinutes={utcOffsetMinutes}
+          canEdit={canEdit}
+          onClose={onClose}
+        />
       </div>
-    </aside>
+    </motion.aside>
   );
 }

@@ -11,6 +11,25 @@ import { NextResponse } from "next/server";
 import { canEdit } from "@/lib/auth";
 import { PlaceEditError } from "@/lib/place-edits";
 import { prisma } from "@/lib/prisma";
+import { clearTripsIndexCache } from "@/lib/queries";
+
+/**
+ * Drops the cached trips index after a successful edit.
+ *
+ * Every one of the four operations changes something the index shows: rename
+ * changes the cover's place name, merge and delete change the place count, and
+ * split changes both. Without this the index would keep serving the old
+ * numbers for up to five minutes after a correction — long enough for the
+ * owner to reasonably conclude the edit had not worked.
+ *
+ * Dropped outright rather than refreshed in the background: the person who
+ * triggered this is the one who just made the correction and is about to go
+ * and look at it, so their next request should wait for fresh numbers. It is
+ * one request against a two-query read.
+ */
+export function invalidateTripsIndex(): void {
+  clearTripsIndexCache();
+}
 
 /**
  * Returns a 403 response when the caller may not edit, or `null` to carry on.

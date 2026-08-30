@@ -259,7 +259,7 @@ function Lightbox({
           fills a band across the middle, the rest of the screen is nearly all
           margin.
         */}
-        <DialogPrimitive.Overlay className="dark fixed inset-0 z-50 bg-black" />
+        <DialogPrimitive.Overlay className="dark fixed inset-0 z-50 bg-black animate-in fade-in duration-200 ease-out" />
 
         <DialogPrimitive.Content
           aria-label={`Photographs from ${label}`}
@@ -387,7 +387,13 @@ function Lightbox({
             */}
             <div
               ref={setStage}
-              className="absolute inset-y-0 left-2 right-2 flex items-center justify-center sm:left-16 sm:right-16"
+              // Fades and grows very slightly on open, so the photograph arrives
+              // rather than appearing. On the stage rather than the figure
+              // inside it, because that figure's transform is the swipe-to-
+              // dismiss drag and the two would overwrite each other. There is
+              // no closing animation: dismissing is something the reader asked
+              // for, and it should already be done.
+              className="absolute inset-y-0 left-2 right-2 flex items-center justify-center animate-in fade-in zoom-in-95 duration-200 ease-out sm:left-16 sm:right-16"
             >
               <figure
                 className="pointer-events-auto relative"

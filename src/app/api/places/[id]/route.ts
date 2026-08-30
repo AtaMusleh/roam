@@ -11,7 +11,12 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { deletePlace, renamePlace } from "@/lib/place-edits";
-import { editGuard, handleEditError, editedPlaceResponse } from "../edit-response";
+import {
+  editGuard,
+  editedPlaceResponse,
+  handleEditError,
+  invalidateTripsIndex,
+} from "../edit-response";
 
 export const runtime = "nodejs";
 
@@ -42,6 +47,7 @@ export async function PATCH(
     return handleEditError(error);
   }
 
+  invalidateTripsIndex();
   return editedPlaceResponse(id);
 }
 
@@ -60,5 +66,6 @@ export async function DELETE(
     return handleEditError(error);
   }
 
+  invalidateTripsIndex();
   return NextResponse.json({ deleted: id });
 }

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,6 +11,12 @@ import {
   NameDiagram,
   TimelineDiagram,
 } from "@/components/home/diagrams";
+import { HeroHeading } from "@/components/home/hero-heading";
+import { HeroParallax } from "@/components/home/hero-parallax";
+import { CountUp } from "@/components/motion/count-up";
+import { Reveal, RevealGroup } from "@/components/motion/reveal";
+import { SmoothScroll } from "@/components/motion/smooth-scroll";
+import { STAGGER } from "@/lib/motion";
 import { getShowcase } from "@/lib/queries";
 import { GITHUB_URL, OSM_COPYRIGHT, SITE_NAME, SITE_TAGLINE } from "@/lib/site";
 import { UNSPLASH_HOME, unsplashVariant } from "@/lib/unsplash";
@@ -89,13 +96,18 @@ export default async function Home() {
     // `dark` is scoped here as it is on the trip page, so the two screens agree
     // and neither depends on a document-level theme.
     <div className="dark flex min-h-dvh flex-col bg-background text-foreground">
+      <SmoothScroll />
+
       {/* --- hero ----------------------------------------------------------- */}
 
       <header className="relative isolate flex min-h-[85dvh] flex-col justify-end overflow-hidden">
         {hero !== null && heroSrc !== null && (
-          <>
+          // The photograph and its blurhash move together, so the placeholder
+          // stays behind the image it is standing in for rather than sliding
+          // out from under it.
+          <HeroParallax className="absolute inset-x-0 top-0 -z-20">
             {hero.blurhash !== null && (
-              <BlurhashCanvas hash={hero.blurhash} className="-z-20" />
+              <BlurhashCanvas hash={hero.blurhash} className="-z-10" />
             )}
             <Image
               src={heroSrc}
@@ -103,9 +115,9 @@ export default async function Home() {
               fill
               priority
               sizes="100vw"
-              className="-z-20 object-cover"
+              className="object-cover"
             />
-          </>
+          </HeroParallax>
         )}
 
         {/*
@@ -121,13 +133,16 @@ export default async function Home() {
             {SITE_NAME}
           </p>
 
-          <h1 className="max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            A map of where your photographs were taken.
-          </h1>
+          <HeroHeading
+            text="A map of where your photographs were taken."
+            className="max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:text-5xl"
+          />
 
-          <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-            {SITE_TAGLINE}
-          </p>
+          <Reveal as="p" delay={0.2} className="mt-5 max-w-2xl">
+            <span className="block text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
+              {SITE_TAGLINE}
+            </span>
+          </Reveal>
 
           {showcase !== null && (
             <>
@@ -155,9 +170,10 @@ export default async function Home() {
               </div>
 
               <p className="mt-5 text-sm text-muted-foreground tabular-nums">
-                {showcase.totals.photoCount.toLocaleString("en-GB")} photographs
-                &middot; {showcase.totals.placeCount} places &middot;{" "}
-                {showcase.totals.dayCount} days &middot; {showcase.tripCount}{" "}
+                <CountUp value={showcase.totals.photoCount} /> photographs
+                &middot; <CountUp value={showcase.totals.placeCount} /> places
+                &middot; <CountUp value={showcase.totals.dayCount} /> days
+                &middot; <CountUp value={showcase.tripCount} />{" "}
                 {showcase.tripCount === 1 ? "trip" : "trips"}
               </p>
             </>
@@ -199,9 +215,17 @@ export default async function Home() {
             How it works
           </h2>
 
-          <ol className="mt-8 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Each step and its diagram arrive together, one after another, so
+              the four read as a sequence — which is what they are. */}
+          <RevealGroup
+            as="ol"
+            itemAs="li"
+            className="mt-8 grid gap-10 sm:grid-cols-2 lg:grid-cols-4"
+            itemClassName="flex flex-col gap-3"
+            stagger={STAGGER.loose}
+          >
             {STEPS.map((step, index) => (
-              <li key={step.title} className="flex flex-col gap-3">
+              <Fragment key={step.title}>
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   {step.diagram}
                 </div>
@@ -216,9 +240,9 @@ export default async function Home() {
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {step.body}
                 </p>
-              </li>
+              </Fragment>
             ))}
-          </ol>
+          </RevealGroup>
         </div>
       </section>
 
@@ -230,19 +254,20 @@ export default async function Home() {
             Decisions worth knowing about
           </h2>
 
-          <div className="mt-8 grid gap-8 lg:grid-cols-3">
+          <RevealGroup
+            className="mt-8 grid gap-8 lg:grid-cols-3"
+            itemClassName="border-t border-roam-accent/40 pt-4"
+            stagger={STAGGER.loose}
+          >
             {DECISIONS.map((decision) => (
-              <article
-                key={decision.title}
-                className="border-t border-roam-accent/40 pt-4"
-              >
+              <Fragment key={decision.title}>
                 <h3 className="text-sm font-semibold">{decision.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                   {decision.body}
                 </p>
-              </article>
+              </Fragment>
             ))}
-          </div>
+          </RevealGroup>
         </div>
       </section>
 

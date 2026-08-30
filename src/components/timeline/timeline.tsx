@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef } from "react";
 
+import { Reveal } from "@/components/motion/reveal";
 import { useLightbox } from "@/components/photo-lightbox";
 import { formatTripDay, formatTripTime, pluralise } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -197,7 +198,11 @@ export function Timeline({
   return (
     <div className="divide-y divide-border">
       {days.map((day, index) => (
-        <section key={day.key} className="px-3 py-4">
+        // Each day fades in as it is scrolled to, once. The observer watches
+        // the viewport rather than this column, which is right: the column is
+        // on screen, and a day's section crossing into view is the same event
+        // either way.
+        <Reveal as="section" key={day.key} className="px-3 py-4">
           <header className="mb-2 flex items-baseline justify-between px-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {formatTripDay(day.date, utcOffsetMinutes)}
@@ -243,7 +248,7 @@ export function Timeline({
               );
             })}
           </ol>
-        </section>
+        </Reveal>
       ))}
     </div>
   );

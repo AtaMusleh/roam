@@ -18,6 +18,12 @@ export interface PhotoGridItem {
   photographerUrl: string | null;
 }
 
+/** Milliseconds each grid position adds to its photograph's fade. */
+const STAGGER_STEP_MS = 30;
+
+/** Position past which no further delay is added. */
+const STAGGER_CAP = 12;
+
 /**
  * The credit links become clickable exactly when the caption is visible.
  *
@@ -47,10 +53,13 @@ function GridPhoto({
   photo,
   sizes,
   onOpen,
+  index,
 }: {
   photo: PhotoGridItem;
   sizes: string;
   onOpen?: (photoId: string, origin: HTMLElement) => void;
+  /** Position in the grid, which sets how long its fade waits. */
+  index: number;
 }) {
   const [loaded, setLoaded] = useState(false);
 
@@ -96,8 +105,16 @@ function GridPhoto({
           onLoad={() => {
             setLoaded(true);
           }}
+          // Staggered by position, so a wall of thumbnails arrives as a sweep
+          // rather than all at once. Capped, because past a dozen the delay
+          // stops reading as rhythm and starts reading as the page being slow —
+          // and a place with fifty photographs would otherwise hold the last of
+          // them back by a second and a half.
+          style={{
+            transitionDelay: `${String(Math.min(index, STAGGER_CAP) * STAGGER_STEP_MS)}ms`,
+          }}
           className={cn(
-            "object-cover transition-opacity duration-500",
+            "object-cover transition-opacity duration-[240ms] ease-out",
             loaded ? "opacity-100" : "opacity-0",
           )}
         />
@@ -170,8 +187,14 @@ export function PhotoGrid({
 
   return (
     <div className={cn("columns-2 gap-2 sm:columns-3", className)}>
-      {photos.map((photo) => (
-        <GridPhoto key={photo.id} photo={photo} sizes={sizes} onOpen={onOpen} />
+      {photos.map((photo, index) => (
+        <GridPhoto
+          key={photo.id}
+          photo={photo}
+          sizes={sizes}
+          onOpen={onOpen}
+          index={index}
+        />
       ))}
     </div>
   );

@@ -3,7 +3,10 @@
 import mapboxgl from "mapbox-gl";
 import { useEffect, useRef, useState } from "react";
 
+import { REDUCED_MOTION_QUERY, ROUTE_DRAW_MS } from "@/lib/motion";
 import { MAP_STYLE, ROAM_ACCENT } from "@/lib/theme";
+
+import { measureRoute, placesReached, routeAt } from "./route-draw";
 
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -51,6 +54,8 @@ export function TripMap({
   const markersRef = useRef(new Map<string, mapboxgl.Marker>());
   /** The styled button inside each marker, keyed by place. */
   const elementsRef = useRef(new Map<string, HTMLElement>());
+  /** The in-flight route draw, so it can be cancelled on teardown. */
+  const drawFrameRef = useRef<number | null>(null);
 
   /**
    * Props the map's own listeners need, held in refs.
@@ -167,19 +172,42 @@ export function TripMap({
       );
     }
 
-    // The route: places joined in the order they were visited. Dashed, because
-    // it is an inference about a journey rather than a recorded track.
-    if (places.length >= 2) {
-      const line: GeoJSON.Feature<GeoJSON.LineString> = {
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "LineString",
-          coordinates: places.map((place) => [place.lng, place.lat]),
-        },
-      };
+    // --- the route, and the draw ------------------------------------------
+    //
+    // Places joined in the order they were visited. Dashed, because it is an
+    // inference about a journey rather than a recorded track.
+    //
+    // The line then draws itself from the first place to the last while the
+    // markers appear in turn as it reaches them. Nothing here touches the
+    // camera: each frame calls `setData` on the source and writes an attribute
+    // onto some marker elements, so panning and zooming during the draw work
+    // exactly as they would at any other time. See `route-draw.ts` for why the
+    // geometry grows rather than the dash pattern moving.
 
-      map.addSource(ROUTE_SOURCE_ID, { type: "geojson", data: line });
+    const route = measureRoute(places);
+    const reduced = window.matchMedia(REDUCED_MOTION_QUERY).matches;
+
+    const reveal = (count: number): void => {
+      places.forEach((place, index) => {
+        const element = elements.get(place.id);
+        if (element) element.dataset["revealed"] = String(index < count);
+      });
+    };
+
+    const asFeature = (
+      coordinates: [number, number][],
+    ): GeoJSON.Feature<GeoJSON.LineString> => ({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates },
+    });
+
+    if (places.length >= 2) {
+      map.addSource(ROUTE_SOURCE_ID, {
+        type: "geojson",
+        // Starts at the head of the route under motion, complete without it.
+        data: asFeature(routeAt(route, reduced ? 1 : 0)),
+      });
       map.addLayer({
         id: ROUTE_LAYER_ID,
         type: "line",
@@ -192,6 +220,34 @@ export function TripMap({
           "line-dasharray": [2, 3],
         },
       });
+    }
+
+    if (reduced) {
+      // Everything in its final state on the first frame — not a faster
+      // animation, none at all.
+      reveal(places.length);
+    } else {
+      reveal(placesReached(route, 0));
+
+      const started = performance.now();
+
+      const step = (now: number): void => {
+        const progress = Math.min(1, (now - started) / ROUTE_DRAW_MS);
+        // Eased so the line leaves the first place quickly and settles into the
+        // last, rather than arriving at a constant crawl.
+        const eased = 1 - Math.pow(1 - progress, 3);
+
+        const source = map.getSource(ROUTE_SOURCE_ID);
+        if (source !== undefined && "setData" in source) {
+          source.setData(asFeature(routeAt(route, eased)));
+        }
+
+        reveal(placesReached(route, eased));
+
+        if (progress < 1) drawFrameRef.current = requestAnimationFrame(step);
+      };
+
+      drawFrameRef.current = requestAnimationFrame(step);
     }
 
     if (places.length > 0) {
@@ -207,11 +263,34 @@ export function TripMap({
     }
 
     return () => {
+      // Before the markers go: a frame that ran after this would write to
+      // elements that are no longer on the map, and to a source that has been
+      // removed from under it.
+      if (drawFrameRef.current !== null) {
+        cancelAnimationFrame(drawFrameRef.current);
+        drawFrameRef.current = null;
+      }
+
       markers.forEach((marker) => {
         marker.remove();
       });
       markers.clear();
       elements.clear();
+
+      // Only when the map is still alive.
+      //
+      // On unmount React runs a component's cleanups in the order the effects
+      // were declared, so the one above this has already called `map.remove()`
+      // — which destroys the style. `getLayer` then reads `style.getOwnLayer`
+      // off `undefined` and throws, and an exception thrown while unmounting
+      // takes the whole React tree down with it: the page being navigated *to*
+      // renders blank, and Next reports it as "This page couldn't load".
+      //
+      // Nothing is leaked by skipping it. `map.remove()` disposes every layer
+      // and source it owns. This branch exists only for the other way this
+      // effect ends — `places` changing while the map lives on — where the old
+      // route does have to come off before the new one goes on.
+      if (mapRef.current !== map) return;
 
       if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
       if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);

@@ -10,7 +10,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { splitPlace } from "@/lib/place-edits";
-import { editGuard, handleEditError } from "../../edit-response";
+import { editGuard, handleEditError, invalidateTripsIndex } from "../../edit-response";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -42,6 +42,8 @@ export async function POST(
   } catch (error) {
     return handleEditError(error);
   }
+
+  invalidateTripsIndex();
 
   // Both halves, since the caller needs to know what the split produced.
   const places = await prisma.place.findMany({

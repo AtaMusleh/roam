@@ -3,6 +3,8 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BlurhashCanvas } from "@/components/blurhash-canvas";
+import { RevealGroup } from "@/components/motion/reveal";
+import { SmoothScroll } from "@/components/motion/smooth-scroll";
 import { SiteNav } from "@/components/site-nav";
 import { isSignedIn } from "@/lib/auth";
 import { formatTripDateRange } from "@/lib/format";
@@ -20,12 +22,12 @@ export const metadata: Metadata = {
 /**
  * Rendered per request rather than cached.
  *
- * It used to revalidate hourly, which was right when the page was the same for
- * everyone. The nav now shows an upload link to whoever is signed in, and
- * reading the session cookie to decide that opts the whole route into dynamic
- * rendering — a cached document cannot vary by cookie. Serving a stale nav to
- * the owner, or the owner's nav to everyone, would both be worse than the
- * eleven queries this costs.
+ * The nav shows an upload link to whoever is signed in, and reading the session
+ * cookie to decide that opts the whole route into dynamic rendering — a cached
+ * document cannot vary by cookie.
+ *
+ * The *data* is cached regardless, in `getTripsIndex`, so what this costs per
+ * request is a cookie read and a cache hit rather than a database round trip.
  */
 export const dynamic = "force-dynamic";
 
@@ -40,12 +42,32 @@ const LEAD_COVER_WIDTH = 1600;
 const COVER_WIDTH = 900;
 
 export default async function TripsPage() {
-  const [trips, signedIn] = await Promise.all([getTripsIndex(), isSignedIn()]);
+  // Logged here, on the server, before it is re-thrown to `error.tsx`.
+  //
+  // A failure inside a Server Component during a client-side navigation
+  // surfaces to the browser as Next's own "This page couldn't load" and
+  // nothing else — the message is redacted in production and the stack never
+  // leaves the server. Without this the only evidence of what went wrong was a
+  // digest, and the terminal stayed silent.
+  let trips: TripSummary[];
+  let signedIn: boolean;
+
+  try {
+    [trips, signedIn] = await Promise.all([getTripsIndex(), isSignedIn()]);
+  } catch (error) {
+    console.error(
+      "[/trips] render failed:",
+      error instanceof Error ? (error.stack ?? error.message) : error,
+    );
+    throw error;
+  }
 
   return (
     // `dark` scoped here, as on the home and trip pages, so the three agree
     // without depending on a document-level theme.
     <div className="dark flex min-h-dvh flex-col bg-background text-foreground">
+      <SmoothScroll />
+
       <SiteNav signedIn={signedIn} />
 
       <header className="border-b border-border/60 px-6 py-12 sm:py-16">
@@ -70,18 +92,20 @@ export default async function TripsPage() {
         {trips.length === 0 ? (
           <EmptyState />
         ) : (
-          <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <RevealGroup
+            as="ul"
+            itemAs="li"
+            className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+            // The newest trip runs the full width and taller, so the index has
+            // a lead rather than reading as an undifferentiated grid.
+            itemClassName={trips.map((_, index) =>
+              index === 0 ? "sm:col-span-2 lg:col-span-3" : undefined,
+            )}
+          >
             {trips.map((trip, index) => (
-              <li
-                key={trip.id}
-                // The newest trip runs the full width and taller, so the index
-                // has a lead rather than reading as an undifferentiated grid.
-                className={index === 0 ? "sm:col-span-2 lg:col-span-3" : undefined}
-              >
-                <TripCard trip={trip} lead={index === 0} />
-              </li>
+              <TripCard key={trip.id} trip={trip} lead={index === 0} />
             ))}
-          </ul>
+          </RevealGroup>
         )}
       </main>
 
@@ -126,7 +150,16 @@ function TripCard({ trip, lead }: { trip: TripSummary; lead: boolean }) {
   return (
     <Link
       href={`/${trip.slug}`}
-      className="group block h-full overflow-hidden rounded-lg border border-border/60 bg-card transition-colors hover:border-roam-accent/60 focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+      // The lift is a translation and a shadow, not a margin: moving the box
+      // itself would reflow the grid row every time a pointer crossed a card.
+      //
+      // The transition names `translate`, not `transform`. Tailwind v4 compiles
+      // `-translate-y-1` to the standalone `translate` property, and a
+      // transition on `transform` does not cover it — the lift snapped.
+      //
+      // `motion-reduce:` drops it, since Tailwind's variant is driven by the
+      // same media query the rest of this respects.
+      className="group block h-full overflow-hidden rounded-lg border border-border/60 bg-card transition-[translate,box-shadow,border-color] duration-150 ease-out hover:-translate-y-1 hover:border-roam-accent/60 hover:shadow-[0_12px_32px_oklch(0_0_0/45%)] focus-visible:ring-2 focus-visible:ring-roam-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
       <div
         className={`relative isolate overflow-hidden bg-muted/30 ${
@@ -149,7 +182,9 @@ function TripCard({ trip, lead }: { trip: TripSummary; lead: boolean }) {
               }
               // A slow zoom on hover, so a card reads as something to open. The
               // image is the only thing that moves; the text stays put.
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              // `scale`, not `transform`, for the same Tailwind v4 reason as
+              // the lift above.
+              className="object-cover transition-[scale] duration-500 ease-out group-hover:scale-[1.06] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
             />
           </>
         ) : (

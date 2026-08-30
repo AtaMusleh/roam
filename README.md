@@ -128,6 +128,35 @@ the demo trips went through. The page says all of this on itself, at the top and
 beside the button, so nobody can spend ten minutes selecting photographs before
 finding out. Trips are still created by `npm run seed:all`.
 
+## Motion
+
+Lenis smooths the scroll on the home page and `/trips` — not on a trip page,
+where the timeline is its own scroll container and the map wants the wheel.
+Motion handles entrances; GSAP's ScrollTrigger handles the hero parallax,
+because `scrub` ties the image to the scrollbar rather than springing toward it.
+
+The signature moment is the trip page's route: the line draws itself from the
+first place to the last over about a second and a half, each numbered marker
+appearing as the line reaches it. It works by growing the line's *geometry*
+rather than animating `line-dasharray` — the dash pattern is load-bearing (the
+route is dotted because it is an inference, not a recorded track), dash lengths
+are measured in multiples of line width so they break under zoom, and the map
+has to stay interactive throughout. Panning or zooming mid-draw does not
+disturb it, because nothing in the animation touches the camera.
+
+Every animation respects `prefers-reduced-motion: reduce`, and respects it
+strictly: with it set, content renders in its final state on the first frame —
+the whole route drawn, every marker present, no fades. That is enforced three
+ways. Components ask before animating; a stylesheet rule collapses any
+transition or animation nobody thought to check; and the server always renders
+the *unanimated* markup, so the preference costs nothing to honour and a reader
+without JavaScript gets content rather than a page of `opacity: 0`.
+
+Timings live in `src/lib/motion.ts`: entrances between 150 and 300ms, exits
+instant. An entrance is the interface arriving and nobody is waiting on it; an
+exit happens because someone asked for something to go, and every millisecond
+of it is a millisecond they asked and did not get.
+
 ## Scripts
 
 | Script | What it does |

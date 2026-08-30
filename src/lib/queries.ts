@@ -209,11 +209,10 @@ export async function getShowcase(): Promise<Showcase | null> {
 }
 
 async function loadShowcase(): Promise<Showcase | null> {
-  const trips = await prisma.trip.findMany({
-    where: { isPublic: true },
-    orderBy: [{ startDate: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, slug: true, utcOffsetMinutes: true },
-  });
+  // The same aggregate the index uses, and the same cache entry. This was
+  // three queries per trip — twelve for four trips — for numbers the index had
+  // already worked out.
+  const trips = await getTripsIndex();
 
   if (trips.length === 0) return null;
 
@@ -224,37 +223,32 @@ async function loadShowcase(): Promise<Showcase | null> {
 
   if (featured === undefined) return null;
 
-  const [perTrip, candidates] = await Promise.all([
-    Promise.all(
-      trips.map((trip) => getTripStats(trip.id, trip.utcOffsetMinutes)),
-    ),
-    prisma.photo.findMany({
-      where: { tripId: featured.id, visitId: { not: null } },
-      // Widest first, so the hero is a photograph that can carry a full-bleed
-      // backdrop rather than one that has to be stretched to fill it.
-      orderBy: [{ width: "desc" }, { id: "asc" }],
-      take: 60,
-      select: {
-        url: true,
-        width: true,
-        height: true,
-        blurhash: true,
-        photographerName: true,
-        photographerUrl: true,
-        visit: { select: { place: { select: { name: true } } } },
-      },
-    }),
-  ]);
+  const candidates = await prisma.photo.findMany({
+    where: { tripId: featured.id, visitId: { not: null } },
+    // Widest first, so the hero is a photograph that can carry a full-bleed
+    // backdrop rather than one that has to be stretched to fill it.
+    orderBy: [{ width: "desc" }, { id: "asc" }],
+    take: 60,
+    select: {
+      url: true,
+      width: true,
+      height: true,
+      blurhash: true,
+      photographerName: true,
+      photographerUrl: true,
+      visit: { select: { place: { select: { name: true } } } },
+    },
+  });
 
   // Days are summed rather than de-duplicated across trips: two journeys in
   // different months share no calendar days, and the number the page wants is
   // "days spent travelling", not "distinct dates in the database".
-  const totals = perTrip.reduce<TripStats>(
-    (sum, stats) => ({
-      placeCount: sum.placeCount + stats.placeCount,
-      photoCount: sum.photoCount + stats.photoCount,
-      visitCount: sum.visitCount + stats.visitCount,
-      dayCount: sum.dayCount + stats.dayCount,
+  const totals = trips.reduce<TripStats>(
+    (sum, trip) => ({
+      placeCount: sum.placeCount + trip.stats.placeCount,
+      photoCount: sum.photoCount + trip.stats.photoCount,
+      visitCount: sum.visitCount + trip.stats.visitCount,
+      dayCount: sum.dayCount + trip.stats.dayCount,
     }),
     { placeCount: 0, photoCount: 0, visitCount: 0, dayCount: 0 },
   );
@@ -305,6 +299,172 @@ export interface TripSummary {
 }
 
 /**
+ * How long the index survives untouched, in milliseconds.
+ *
+ * The data behind it changes on a reseed and on a manual correction. The
+ * corrections clear it immediately; a reseed happens outside Next entirely and
+ * cannot, so this is the ceiling on how long a reseeded trip can be missing
+ * from the index.
+ */
+const TRIPS_INDEX_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * The index as it survives the cache boundary.
+ *
+ * Instants are carried as epoch milliseconds rather than `Date`s. Next's cache
+ * round-trips its entries through serialisation, which turns a `Date` into a
+ * string, and a `TripSummary.start` that is secretly a string would blow up in
+ * `formatTripDateRange` at render time rather than here. Numbers survive
+ * intact and are turned back into `Date`s at the one boundary below.
+ */
+interface CachedTripSummary extends Omit<TripSummary, "start" | "end"> {
+  startMs: number;
+  endMs: number;
+}
+
+/** One row of the aggregate below. */
+interface TripAggregateRow {
+  id: string;
+  name: string;
+  slug: string;
+  utcOffsetMinutes: number;
+  startMs: number;
+  endMs: number;
+  placeCount: number;
+  visitCount: number;
+  dayCount: number;
+  photoCount: number;
+}
+
+/** One row of the cover query below. */
+interface CoverRow {
+  tripId: string;
+  placeName: string;
+  url: string;
+  width: number;
+  height: number;
+  blurhash: string | null;
+  photographerName: string | null;
+  photographerUrl: string | null;
+}
+
+/**
+ * Every public trip with its counts, in one aggregate.
+ *
+ * Raw SQL rather than Prisma's query builder because what this needs — counts
+ * over two levels of relation, a distinct count of *derived* local dates, and
+ * a photo total that must not be inflated by the join fan-out — is a `GROUP
+ * BY` with a scalar subquery, and expressing that through the client would
+ * mean the several separate round trips this replaces.
+ *
+ * `COUNT(DISTINCT ...)` on places and visits because the `Place`→`Visit` join
+ * multiplies rows; photographs are counted in a subquery for the same reason,
+ * where joining them would multiply every other count by the photo count.
+ *
+ * The day count reproduces `tripDayKey` in SQL: shift the stored UTC instant
+ * by the trip's own offset, then take the date. Both columns are `timestamp
+ * without time zone` holding UTC, so the shift is plain interval arithmetic
+ * and no session time zone is involved.
+ *
+ * `EXTRACT(EPOCH ...)` on a `timestamp without time zone` reads it as UTC,
+ * which is what these hold. Cast to `float8` rather than `bigint` so it
+ * arrives as a JavaScript number; epoch milliseconds are around 1.8e12, well
+ * inside what a double represents exactly.
+ */
+function tripAggregate(): Promise<TripAggregateRow[]> {
+  return prisma.$queryRaw<TripAggregateRow[]>`
+    SELECT
+      t.id,
+      t.name,
+      t.slug,
+      t."utcOffsetMinutes" AS "utcOffsetMinutes",
+      (EXTRACT(EPOCH FROM COALESCE(MIN(v."arrivedAt"), t."startDate")) * 1000)::float8
+        AS "startMs",
+      (EXTRACT(EPOCH FROM COALESCE(MAX(v."departedAt"), t."endDate")) * 1000)::float8
+        AS "endMs",
+      COUNT(DISTINCT p.id)::int AS "placeCount",
+      COUNT(DISTINCT v.id)::int AS "visitCount",
+      COUNT(DISTINCT (
+        v."arrivedAt" + t."utcOffsetMinutes" * INTERVAL '1 minute'
+      )::date)::int AS "dayCount",
+      (SELECT COUNT(*)::int FROM "Photo" ph WHERE ph."tripId" = t.id)
+        AS "photoCount"
+    FROM "Trip" t
+    LEFT JOIN "Place" p ON p."tripId" = t.id
+    LEFT JOIN "Visit" v ON v."placeId" = p.id
+    WHERE t."isPublic" = TRUE
+    GROUP BY t.id, t.name, t.slug, t."utcOffsetMinutes", t."startDate", t."endDate"
+    ORDER BY t."startDate" DESC, t.name ASC
+  `;
+}
+
+/**
+ * One cover photograph per public trip, in a single pass.
+ *
+ * Two window functions rather than a query per trip. The first ranks each
+ * trip's places by how many photographs they hold and keeps the densest; the
+ * second ranks that place's photographs, landscape first and then widest.
+ *
+ * Ordering by `(width > height * 1.3) DESC` puts landscape ahead of portrait
+ * because Postgres sorts `TRUE` above `FALSE`. That reproduces what the old
+ * per-trip lookup did — take the widest landscape, fall back to the widest of
+ * anything — with one difference worth naming: the old version only looked at
+ * the twenty-four widest photographs, so a place whose landscape shots were
+ * all narrow fell back to a portrait. This considers every photograph in the
+ * place, so it finds a landscape cover strictly more often.
+ */
+function coverCandidates(): Promise<CoverRow[]> {
+  return prisma.$queryRaw<CoverRow[]>`
+    WITH ranked_places AS (
+      SELECT
+        p.id,
+        p."tripId",
+        p.name,
+        ROW_NUMBER() OVER (
+          PARTITION BY p."tripId"
+          ORDER BY p."photoCount" DESC, p.id ASC
+        ) AS place_rank
+      FROM "Place" p
+      JOIN "Trip" t ON t.id = p."tripId"
+      WHERE t."isPublic" = TRUE
+    ),
+    ranked_photos AS (
+      SELECT
+        rp."tripId" AS "tripId",
+        rp.name AS "placeName",
+        ph.url,
+        ph.width,
+        ph.height,
+        ph.blurhash,
+        ph."photographerName" AS "photographerName",
+        ph."photographerUrl" AS "photographerUrl",
+        ROW_NUMBER() OVER (
+          PARTITION BY rp."tripId"
+          ORDER BY
+            (ph.width::float8 > ph.height::float8 * 1.3) DESC,
+            ph.width DESC,
+            ph.id ASC
+        ) AS photo_rank
+      FROM ranked_places rp
+      JOIN "Visit" v ON v."placeId" = rp.id
+      JOIN "Photo" ph ON ph."visitId" = v.id
+      WHERE rp.place_rank = 1
+    )
+    SELECT
+      "tripId",
+      "placeName",
+      url,
+      width,
+      height,
+      blurhash,
+      "photographerName",
+      "photographerUrl"
+    FROM ranked_photos
+    WHERE photo_rank = 1
+  `;
+}
+
+/**
  * Every public trip, newest first, with the numbers and cover a card needs.
  *
  * Ordered by `startDate` rather than `createdAt`: the index is a shelf of
@@ -312,103 +472,123 @@ export interface TripSummary {
  * not when the row was written. Seeding all four cities in one run would make
  * `createdAt` an accident of alphabetical order.
  *
- * Deliberately a fixed number of queries rather than one per trip: places,
- * photo counts and visits are each fetched once for the whole set and grouped
- * in memory. Only the covers cost a query apiece, and that is bounded by how
- * many trips exist.
+ * Two queries, run concurrently, and then cached. It used to be eleven issued
+ * one after another — a count per trip, a photo count per trip, a visit list,
+ * and a cover lookup for each trip in turn — which on a cold serverless
+ * invocation against a sleeping Neon instance was slow enough that the
+ * client-side navigation gave up and showed its own error page.
  */
-export async function getTripsIndex(): Promise<TripSummary[]> {
-  const trips = await prisma.trip.findMany({
-    where: { isPublic: true },
-    orderBy: [{ startDate: "desc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      startDate: true,
-      endDate: true,
-      utcOffsetMinutes: true,
-    },
-  });
-
-  if (trips.length === 0) return [];
-
-  const tripIds = trips.map((trip) => trip.id);
-
-  const [places, photoCounts, visits] = await Promise.all([
-    prisma.place.findMany({
-      where: { tripId: { in: tripIds } },
-      // Densest place first, so the head of each trip's group is the one whose
-      // photographs the cover comes from.
-      orderBy: [{ photoCount: "desc" }, { id: "asc" }],
-      select: { id: true, tripId: true, name: true },
-    }),
-    prisma.photo.groupBy({
-      by: ["tripId"],
-      where: { tripId: { in: tripIds } },
-      _count: { _all: true },
-    }),
-    prisma.visit.findMany({
-      where: { place: { tripId: { in: tripIds } } },
-      select: {
-        arrivedAt: true,
-        departedAt: true,
-        place: { select: { tripId: true } },
-      },
-    }),
+async function readTripsIndex(): Promise<CachedTripSummary[]> {
+  const [trips, covers] = await Promise.all([
+    tripAggregate(),
+    coverCandidates(),
   ]);
 
-  const placesByTrip = new Map<string, { id: string; name: string }[]>();
-  for (const place of places) {
-    const group = placesByTrip.get(place.tripId) ?? [];
-    group.push({ id: place.id, name: place.name });
-    placesByTrip.set(place.tripId, group);
+  const coverByTrip = new Map(covers.map((cover) => [cover.tripId, cover]));
+
+  return trips.map((trip) => {
+    const cover = coverByTrip.get(trip.id);
+
+    return {
+      id: trip.id,
+      name: trip.name,
+      slug: trip.slug,
+      startMs: trip.startMs,
+      endMs: trip.endMs,
+      utcOffsetMinutes: trip.utcOffsetMinutes,
+      stats: {
+        placeCount: trip.placeCount,
+        photoCount: trip.photoCount,
+        visitCount: trip.visitCount,
+        dayCount: trip.dayCount,
+      },
+      cover:
+        cover === undefined
+          ? null
+          : {
+              url: cover.url,
+              width: cover.width,
+              height: cover.height,
+              blurhash: cover.blurhash,
+              photographerName: cover.photographerName,
+              photographerUrl: cover.photographerUrl,
+              placeName: cover.placeName,
+            },
+    };
+  });
+}
+
+function withDates(rows: CachedTripSummary[]): TripSummary[] {
+  return rows.map(({ startMs, endMs, ...trip }) => ({
+    ...trip,
+    start: new Date(startMs),
+    end: new Date(endMs),
+  }));
+}
+
+/**
+ * The cache itself: one entry, in this module, with a timestamp.
+ *
+ * Deliberately not `unstable_cache`. That API is deprecated in Next 16, and it
+ * throws outright when called without a request context — which makes it
+ * unusable from a script or a test, and a hazard anywhere the context is not
+ * guaranteed. A plain module-level value has neither problem: it is a variable,
+ * it works identically wherever it is read from, and there is nothing about it
+ * to reason about.
+ *
+ * The in-flight promise is held rather than only the result, so a burst of
+ * concurrent requests arriving on a cold cache share one pair of queries
+ * instead of each starting its own.
+ *
+ * Per-process, which is the honest limit. Several server instances each keep
+ * their own copy, so a correction made against one is invisible to the others
+ * until their five minutes are up. For an index of four demo trips that is the
+ * right trade; anything that needed better would want a shared store, and the
+ * shape here is the shape that would port to one.
+ */
+let tripsIndexCache: {
+  readAt: number;
+  rows: Promise<CachedTripSummary[]>;
+} | null = null;
+
+/**
+ * Drops the cached index.
+ *
+ * Called after any edit that could change what the index shows — which is all
+ * four place operations, since every one of them moves photographs between
+ * places or removes a place outright.
+ */
+export function clearTripsIndexCache(): void {
+  tripsIndexCache = null;
+}
+
+/** The cached index. Safe to call from anywhere, request context or not. */
+export async function getTripsIndex(): Promise<TripSummary[]> {
+  const now = Date.now();
+
+  if (tripsIndexCache === null || now - tripsIndexCache.readAt >= TRIPS_INDEX_TTL_MS) {
+    const rows = readTripsIndex();
+
+    // Stored before it settles, so concurrent callers join this read. Cleared
+    // again on failure, or a single hiccup would be cached as the answer for
+    // the next five minutes.
+    tripsIndexCache = { readAt: now, rows };
+    rows.catch(() => {
+      tripsIndexCache = null;
+    });
   }
 
-  const photosByTrip = new Map(
-    photoCounts.map((row) => [row.tripId, row._count._all]),
-  );
+  return withDates(await tripsIndexCache.rows);
+}
 
-  const visitsByTrip = new Map<string, { arrivedAt: Date; departedAt: Date }[]>();
-  for (const visit of visits) {
-    const group = visitsByTrip.get(visit.place.tripId) ?? [];
-    group.push({ arrivedAt: visit.arrivedAt, departedAt: visit.departedAt });
-    visitsByTrip.set(visit.place.tripId, group);
-  }
-
-  return await Promise.all(
-    trips.map(async (trip) => {
-      const tripPlaces = placesByTrip.get(trip.id) ?? [];
-      const tripVisits = visitsByTrip.get(trip.id) ?? [];
-
-      const days = new Set(
-        tripVisits.map((visit) =>
-          tripDayKey(visit.arrivedAt, trip.utcOffsetMinutes),
-        ),
-      );
-
-      const arrivals = tripVisits.map((visit) => visit.arrivedAt.getTime());
-      const departures = tripVisits.map((visit) => visit.departedAt.getTime());
-
-      return {
-        id: trip.id,
-        name: trip.name,
-        slug: trip.slug,
-        start:
-          arrivals.length > 0 ? new Date(Math.min(...arrivals)) : trip.startDate,
-        end:
-          departures.length > 0 ? new Date(Math.max(...departures)) : trip.endDate,
-        utcOffsetMinutes: trip.utcOffsetMinutes,
-        stats: {
-          placeCount: tripPlaces.length,
-          photoCount: photosByTrip.get(trip.id) ?? 0,
-          visitCount: tripVisits.length,
-          dayCount: days.size,
-        },
-        cover: await coverPhoto(tripPlaces[0] ?? null),
-      };
-    }),
-  );
+/**
+ * The same index, always straight from the database.
+ *
+ * For scripts and tests, which want to check what is actually stored rather
+ * than whatever this process last read.
+ */
+export async function fetchTripsIndex(): Promise<TripSummary[]> {
+  return withDates(await readTripsIndex());
 }
 
 /** A trip reduced to what a `<select>` needs. */
@@ -430,42 +610,6 @@ export async function getTripOptions(): Promise<TripOption[]> {
     orderBy: [{ startDate: "desc" }, { name: "asc" }],
     select: { id: true, name: true, slug: true },
   });
-}
-
-/**
- * The widest landscape photograph belonging to a place.
- *
- * Widest because a card's cover is a letterbox and a narrow original has to be
- * upscaled to fill it; landscape because a portrait photograph in that box is
- * cropped to a vertical slice of itself. The check is done in JavaScript over
- * the widest few rather than in SQL, because the comparison is between two
- * columns of the same row and the candidate set is tiny either way.
- */
-async function coverPhoto(
-  place: { id: string; name: string } | null,
-): Promise<ShowcasePhoto | null> {
-  if (place === null) return null;
-
-  const candidates = await prisma.photo.findMany({
-    where: { visit: { placeId: place.id } },
-    orderBy: [{ width: "desc" }, { id: "asc" }],
-    take: 24,
-    select: {
-      url: true,
-      width: true,
-      height: true,
-      blurhash: true,
-      photographerName: true,
-      photographerUrl: true,
-    },
-  });
-
-  const chosen =
-    candidates.find((photo) => photo.width > photo.height * 1.3) ??
-    candidates[0] ??
-    null;
-
-  return chosen === null ? null : { ...chosen, placeName: place.name };
 }
 
 /**
